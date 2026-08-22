@@ -1,0 +1,119 @@
+{
+  "name": "ts-workflow-engine-lite",
+  "version": "2.1.0",
+  "description": "Lightweight TypeScript workflow engine with a REST API and local file persistence for single-process applications.",
+  "keywords": [
+    "ai-workflow",
+    "automation",
+    "cron",
+    "dag",
+    "dead-letter-queue",
+    "event-driven",
+    "llm",
+    "orchestration",
+    "rollback",
+    "scheduler",
+    "state-machine",
+    "temporal",
+    "typescript",
+    "workflow",
+    "workflow-engine"
+  ],
+  "homepage": "https://github.com/AppleSunCloud/ts-runit-lite",
+  "bugs": {
+    "url": "https://github.com/AppleSunCloud/ts-runit-lite/issues"
+  },
+  "license": "MIT",
+  "author": "Sario(1160948478@qq.com)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AppleSunCloud/ts-runit-lite.git"
+  },
+  "files": [
+    "dist/src",
+    "README.md",
+    "LICENSE"
+  ],
+  "type": "module",
+  "sideEffects": false,
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "build": "pnpm clean && tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
+    "start": "pnpm build && node dist/src/cli.js",
+    "dev": "tsx src/cli.ts",
+    "dev:api": "cross-env START_API_SERVER=true tsx src/cli.ts",
+    "start:api": "pnpm build && cross-env START_API_SERVER=true node dist/src/cli.js",
+    "watch": "tsc -w",
+    "test": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run",
+    "test:watch": "cross-env VITE_CJS_IGNORE_WARNING=true vitest",
+    "test:coverage": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run --coverage",
+    "test:workflow": "tsx src/test/test-workflow.ts",
+    "test:data-processing": "tsx src/test/data-processing-workflow.ts",
+    "example:quickstart": "tsx examples/quickstart.ts",
+    "example:order": "tsx examples/order-processing.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "check": "pnpm lint:fix && pnpm format",
+    "check:ci": "pnpm lint && pnpm format:check",
+    "check:all": "pnpm typecheck && pnpm check:ci",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "axios": "^1.11.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "5.1.0",
+    "express-validator": "^7.2.1",
+    "helmet": "^8.1.0",
+    "json-schema-to-zod": "^2.8.1",
+    "jsonwebtoken": "^9.0.0",
+    "morgan": "^1.10.1",
+    "node-cron": "^3.0.3",
+    "swagger-ui-dist": "^5.31.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.19.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "5.0.3",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^18.19.130",
+    "@types/node-cron": "^3.0.11",
+    "@types/supertest": "^7.2.0",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.18.1",
+    "@vitest/coverage-v8": "^2.0.0",
+    "cross-env": "^10.0.0",
+    "fast-check": "^4.7.0",
+    "oxfmt": "0.63.0",
+    "oxlint": "1.78.0",
+    "supertest": "^7.2.2",
+    "ts-node": "^10.9.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.0.0",
+    "vitest": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "pnpm@10.33.4",
+  "pnpm": {
+    "overrides": {
+      "@types/express-serve-static-core": "5.0.7"
+    }
+  }
+}

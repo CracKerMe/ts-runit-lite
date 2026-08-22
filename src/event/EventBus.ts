@@ -1,0 +1,65 @@
+import { Logger } from "../utils/Logger";
+
+export type EventHandler = (data: unknown) => void | Promise<void>;
+
+export class EventBus {
+  private handlers: Record<string, EventHandler[]> = {};
+
+  on(event: string, handler: EventHandler): void {
+    if (!this.handlers[event]) this.handlers[event] = [];
+    this.handlers[event].push(handler);
+  }
+
+  emit(event: string, data: unknown): void {
+    this.dispatchLocal(event, data);
+  }
+
+  off(event: string, handler: EventHandler): void {
+    if (!this.handlers[event]) return;
+    this.handlers[event] = this.handlers[event].filter((h) => h !== handler);
+  }
+
+  /**
+   * 将事件分发给本进程内的订阅者。
+   * 如果 handler 返回 Promise（async handler），附加 .catch 防止 unhandled rejection。
+   */
+  protected dispatchLocal(event: string, data: unknown): void {
+    if (this.handlers[event]) {
+      for (const h of this.handlers[event]) {
+        try {
+          const result = h(data);
+          // async handler 返回 Promise 时，捕获拒绝防止 unhandled rejection
+          if (result && typeof (result as Promise<void>).catch === "function") {
+            (result as Promise<void>).catch((error: unknown) => {
+              Logger.warn(
+                "system",
+                "eventbus",
+                `Async event handler error for '${event}'`,
+                {
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              );
+            });
+          }
+        } catch (error) {
+          Logger.warn(
+            "system",
+            "eventbus",
+            `Event handler error for '${event}'`,
+            { error: error instanceof Error ? error.message : String(error) },
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * 释放底层资源（分布式实现关闭订阅连接时使用）
+   */
+  async close(): Promise<void> {
+    // 内存实现无需释放资源
+  }
+}
+
+// 全局事件总线
+export const eventBus = new EventBus();

@@ -1,0 +1,30 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["typescript", "unicorn", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "rules": {
+    "no-explicit-any": "warn",
+    "no-unused-vars": "warn",
+    "no-non-null-assertion": "off",
+    "no-template-curly-in-string": "off",
+    "default-param-last": "error",
+    "no-param-reassign": "error"
+  },
+  "ignorePatterns": [
+    "dist",
+    "coverage",
+    "src/api/console/web",
+    "src/api/console/tracing",
+    "src/api/console/cytoscape-dagre.js",
+    "src/api/console/dagre.min.js",
+    "src/api/console/cytoscape.min.js",
+    "src/api/console/index.html"
+  ],
+  "env": {
+    "builtin": true,
+    "node": true
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "declaration": true,
+    "sourceMap": true,
+    "removeComments": true
+  },
+  "include": ["src"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "tests",
+    "src/**/__tests__",
+    "src/**/*.test.ts",
+    "src/demo",
+    "src/test",
+    "src/testing/testWorkflow.ts"
+  ]
+}
