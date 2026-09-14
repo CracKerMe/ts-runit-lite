@@ -1,4 +1,5 @@
 import { getAppConfig } from "../config/AppConfig";
+import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
 
 /**
@@ -164,10 +165,7 @@ export class ConcurrencyControl {
   /**
    * 获取信号量（用于限制并发数）
    */
-  async acquireSemaphore(
-    name: string,
-    maxConcurrent: number,
-  ): Promise<boolean> {
+  acquireSemaphore(name: string, maxConcurrent: number): boolean {
     const current = this.semaphores.get(name) ?? 0;
     if (current >= maxConcurrent) {
       return false;
@@ -194,7 +192,7 @@ export class ConcurrencyControl {
     maxConcurrent: number,
   ): Promise<boolean> {
     for (let i = 0; i < this.config.maxRetries; i++) {
-      if (await this.acquireSemaphore(name, maxConcurrent)) {
+      if (this.acquireSemaphore(name, maxConcurrent)) {
         return true;
       }
       await this.delay(this.config.retryDelay);
@@ -217,7 +215,7 @@ export class ConcurrencyControl {
     return this.acquireSemaphore(
       "instances",
       this.config.maxConcurrentInstances,
-    ) as unknown as boolean;
+    );
   }
 
   /**
@@ -305,18 +303,19 @@ export function getConcurrencyControl(): ConcurrencyControl {
       });
     } catch {
       concurrencyControlInstance = new ConcurrencyControl({
-        maxConcurrentInstances: Number.parseInt(
-          process.env.MAX_CONCURRENT_INSTANCES || "100",
-          10,
+        maxConcurrentInstances: parseEnvInt(
+          process.env.MAX_CONCURRENT_INSTANCES,
+          100,
+          { min: 1 },
         ),
-        maxConcurrentNodesPerInstance: Number.parseInt(
-          process.env.MAX_CONCURRENT_NODES || "10",
+        maxConcurrentNodesPerInstance: parseEnvInt(
+          process.env.MAX_CONCURRENT_NODES,
           10,
+          { min: 1 },
         ),
-        lockTimeout: Number.parseInt(
-          process.env.LOCK_TIMEOUT_MS || "30000",
-          10,
-        ),
+        lockTimeout: parseEnvInt(process.env.LOCK_TIMEOUT_MS, 30000, {
+          min: 1,
+        }),
       });
     }
   }

@@ -1,6 +1,7 @@
 import { type Request, type Response, Router } from "express";
 import type { DeadLetterQueue, DeadLetterStatus } from "../../dlq/index";
 import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import { parseEnvInt } from "../../utils/env";
 import { Logger } from "../../utils/Logger";
 import { sendError, sendSuccess } from "../response";
 
@@ -14,11 +15,11 @@ const VALID_STATUSES: DeadLetterStatus[] = [
 ];
 
 function getMaxRetries(): number {
-  return Number.parseInt(process.env.DLQ_MAX_RETRIES || "5", 10);
+  return parseEnvInt(process.env.DLQ_MAX_RETRIES, 5, { min: 0 });
 }
 
 function getBatchMaxSize(): number {
-  return Number.parseInt(process.env.BATCH_MAX_SIZE || "100", 10);
+  return parseEnvInt(process.env.BATCH_MAX_SIZE, 100, { min: 1 });
 }
 
 function parseBatchIds(req: Request, res: Response): string[] | null {

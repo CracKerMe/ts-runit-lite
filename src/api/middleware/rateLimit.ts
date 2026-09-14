@@ -1,5 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { StorageProvider } from "../../storage/StorageProvider";
+import { parseEnvInt } from "../../utils/env";
 import { Logger } from "../../utils/Logger";
 import { sendError } from "../response";
 import {
@@ -8,14 +9,16 @@ import {
   type RateLimitStore,
 } from "./rateLimitStore";
 
-const defaultWindowMs = Number.parseInt(
-  process.env.RATE_LIMIT_WINDOW_MS || "60000",
-  10,
-);
-const defaultMaxRequests = Number.parseInt(
-  process.env.RATE_LIMIT_MAX_REQUESTS || "100",
-  10,
-);
+// 懒读取而非模块加载期求值：既便于测试覆盖，也避免非法值被固化。
+// 注意 min:1 —— RATE_LIMIT_MAX_REQUESTS=abc 会让 `count >= NaN` 恒为
+// false（限流完全失效），=0 则会封死所有请求。
+function getDefaultWindowMs(): number {
+  return parseEnvInt(process.env.RATE_LIMIT_WINDOW_MS, 60_000, { min: 1 });
+}
+
+function getDefaultMaxRequests(): number {
+  return parseEnvInt(process.env.RATE_LIMIT_MAX_REQUESTS, 100, { min: 1 });
+}
 
 // 限流存储（内存）— 限流状态始终是进程本地，不含分布式/Redis 限流。
 const defaultStore: RateLimitStore = new MemoryRateLimitStore();
@@ -81,14 +84,15 @@ export const rateLimitMiddleware = async (
 
   // 使用 IP 作为限流 key
   const key = req.ip || req.socket.remoteAddress || "unknown";
+  const maxRequests = getDefaultMaxRequests();
   const result = await checkLimit(
     defaultStore,
     key,
-    defaultWindowMs,
-    defaultMaxRequests,
+    getDefaultWindowMs(),
+    maxRequests,
   );
 
-  applyRateLimitHeaders(res, defaultMaxRequests, result);
+  applyRateLimitHeaders(res, maxRequests, result);
 
   if (!result.allowed) {
     Logger.warn("system", "rateLimit", `Rate limit exceeded for ${key}`);

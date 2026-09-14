@@ -17,6 +17,7 @@ import { setHookDispatcher } from "../event/HookManager";
 import { getMetrics, recordApiRequest } from "../metrics/index";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { AuditLogger } from "../utils/AuditLogger";
+import { parseEnvInt } from "../utils/env";
 import { errorMessage, errorStack, Logger } from "../utils/Logger";
 import { ConsoleWebSocketManager } from "./ConsoleWebSocketManager";
 import { ApiError, ErrorCode, errorHandler } from "./ErrorHandler";
@@ -66,7 +67,8 @@ export async function startApiServer(
   config: ApiServerConfig = {},
 ): Promise<Server> {
   const port =
-    config.port ?? Number.parseInt(process.env.API_PORT || "3345", 10);
+    config.port ??
+    parseEnvInt(process.env.API_PORT, 3345, { min: 0, max: 65535 });
   const enableAuth = config.enableAuth ?? process.env.AUTH_ENABLED === "true";
   const enableRateLimit =
     config.enableRateLimit ?? process.env.RATE_LIMIT_ENABLED !== "false";

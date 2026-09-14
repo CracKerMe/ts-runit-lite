@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import { type HookPayload, onHook } from "../event/HookManager";
+import { parseEnvInt } from "../utils/env";
 import { errorStack, Logger } from "../utils/Logger";
 import type { StorageProvider } from "./StorageProvider";
 
@@ -31,13 +32,12 @@ export class ArchiveManager {
       path.join(process.cwd(), "archive");
     this.retentionDays =
       options.retentionDays ??
-      Number.parseInt(process.env.ARCHIVE_RETENTION_DAYS || "90", 10);
+      parseEnvInt(process.env.ARCHIVE_RETENTION_DAYS, 90, { min: 0 });
     this.cleanupIntervalMs =
       options.cleanupIntervalMs ??
-      Number.parseInt(
-        process.env.ARCHIVE_CLEANUP_INTERVAL_MS || "21600000",
-        10,
-      );
+      parseEnvInt(process.env.ARCHIVE_CLEANUP_INTERVAL_MS, 21_600_000, {
+        min: 1000,
+      });
   }
 
   public initialize(): void {

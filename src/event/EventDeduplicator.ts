@@ -1,3 +1,4 @@
+import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
 
 /**
@@ -146,7 +147,7 @@ export class MemoryAsyncDeduplicator implements AsyncEventDeduplicator {
 }
 
 function getDedupTtlSeconds(): number {
-  return Number.parseInt(process.env.EVENT_DEDUP_TTL_SECONDS || "86400", 10);
+  return parseEnvInt(process.env.EVENT_DEDUP_TTL_SECONDS, 86_400, { min: 1 });
 }
 
 /**

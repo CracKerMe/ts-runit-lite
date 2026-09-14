@@ -18,6 +18,7 @@ import type {
   StorageProvider,
 } from "../storage/StorageProvider";
 import { createLeaseStore, type LeaseStore } from "../utils/LeaseStore";
+import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
 import {
   CanaryReleaseManager,
@@ -87,17 +88,19 @@ export class WorkflowEngineV2 {
     this.lifecycleManager = new LifecycleManager(storage, {
       instanceTtlHours: config.instanceTtlHours,
       cleanupIntervalMs: config.cleanupIntervalMs,
-      eventRetentionDays: Number.parseInt(
-        process.env.EVENT_RETENTION_DAYS || "90",
-        10,
-      ),
+      eventRetentionDays: parseEnvInt(process.env.EVENT_RETENTION_DAYS, 90, {
+        min: 0,
+      }),
     });
     this.eventCoordinator = new EventCoordinator(eventBus, storage);
     this.leaseStore = createLeaseStore();
     this.heartbeatManager = new HeartbeatManager(storage, this.leaseHolderId);
-    this.instanceLeaseTtlMs = Number.parseInt(
-      process.env.INSTANCE_LEASE_TTL_MS || "30000",
-      10,
+    // min:1000 —— NaN 或极小值都会让 Math.max(1000, ttl/2) 退化，
+    // setInterval(fn, NaN) 被 Node 强制为 1ms，续约定时器每毫秒触发。
+    this.instanceLeaseTtlMs = parseEnvInt(
+      process.env.INSTANCE_LEASE_TTL_MS,
+      30000,
+      { min: 1000 },
     );
     this.executionOrchestrator = new ExecutionOrchestrator(
       this.instanceManager,

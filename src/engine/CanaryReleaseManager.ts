@@ -5,6 +5,7 @@ import type {
   StorageProvider,
   StoredWorkflow,
 } from "../storage/StorageProvider";
+import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
 
 export interface CanaryStatus {
@@ -187,7 +188,9 @@ export class CanaryReleaseManager {
   }
 
   startEvaluationLoop(
-    intervalMs = Number(process.env.CANARY_EVAL_INTERVAL_MS || 60000),
+    intervalMs = parseEnvInt(process.env.CANARY_EVAL_INTERVAL_MS, 60000, {
+      min: 1000,
+    }),
   ): void {
     if (this.evaluationTimer) return;
     this.evaluationTimer = setInterval(() => {
