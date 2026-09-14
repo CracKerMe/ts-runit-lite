@@ -177,12 +177,25 @@ export async function flush(): Promise<void> {
 // 进程退出前的兜底：flushFileSync 内部只用同步的 appendFileSync，
 // 在 "exit" 事件里调用是安全的（不能用异步 I/O，但这里不需要）。
 // 保证优雅关闭路径之外的退出（测试运行器、CLI 完成）也不丢尾部日志。
-process.on("exit", () => {
-  const filePaths = new Set([...pendingLines.keys(), ...flushTimers.keys()]);
-  for (const filePath of filePaths) {
-    flushFileSync(filePath);
-  }
-});
+//
+// 用进程级标记而不是直接 process.on(...)：模块可能被多次加载
+// （例如测试里的 vi.resetModules() + 动态 import），每次加载都会重新
+// 执行顶层代码，若不加标记会不断堆积新的 "exit" 监听器，触发
+// MaxListenersExceededWarning。
+const EXIT_LISTENER_FLAG = Symbol.for("ts-runit-lite.logger.exitListener");
+type ProcessWithLoggerFlag = typeof process & {
+  [EXIT_LISTENER_FLAG]?: boolean;
+};
+const flaggedProcess = process as ProcessWithLoggerFlag;
+if (!flaggedProcess[EXIT_LISTENER_FLAG]) {
+  flaggedProcess[EXIT_LISTENER_FLAG] = true;
+  process.on("exit", () => {
+    const filePaths = new Set([...pendingLines.keys(), ...flushTimers.keys()]);
+    for (const filePath of filePaths) {
+      flushFileSync(filePath);
+    }
+  });
+}
 
 /**
  * 按天写入日志文件（YYYY-MM-DD.log），不再输出到控制台。
