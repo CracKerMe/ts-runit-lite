@@ -244,14 +244,19 @@ export async function startApiServer(
         if (enableMetrics) {
           // Normalize path to avoid high-cardinality Prometheus labels.
           // Strip dynamic segments (instance IDs, workflow IDs) from the path.
+          // 无匹配路由的请求（扫描器、拼错的 URL）其 path 完全由调用方
+          // 控制，且既不含 UUID 也不含数字段，会原样成为永久的指标标签。
+          // 未认证的攻击者据此即可无限增长内存并让 /metrics 无法抓取。
           const normalizedPath = req.route
             ? `${req.baseUrl}${req.route.path}`
-            : req.path
-                .replace(
-                  /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
-                  "/:id",
-                )
-                .replace(/\/\d+/g, "/:id");
+            : res.statusCode === 404
+              ? "unmatched"
+              : req.path
+                  .replace(
+                    /\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+                    "/:id",
+                  )
+                  .replace(/\/\d+/g, "/:id");
           recordApiRequest(
             req.method,
             normalizedPath,

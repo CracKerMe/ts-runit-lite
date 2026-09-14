@@ -78,6 +78,9 @@ export class EventHistoryManager {
   private storage: StorageProvider | null = null;
   private readonly MAX_EVENTS = 1000; // 最大事件历史记录数
   private readonly FETCH_ALL_PAGE_SIZE = 10_000;
+  /** 每写入多少条事件才做一次裁剪（摊还全量扫描开销）。 */
+  private readonly TRIM_INTERVAL = 100;
+  private writesSinceTrim = 0;
 
   constructor(storage?: StorageProvider) {
     if (storage) {
@@ -487,6 +490,12 @@ export class EventHistoryManager {
    */
   private async trimEventHistory(): Promise<void> {
     if (!this.storage) return;
+
+    // 每次写入都做一次全量拉取 + 内存排序，成本远高于写入本身。
+    // 摊还成一批一次：MAX_EVENTS 是软上限，短暂超出 TRIM_INTERVAL 条无害。
+    this.writesSinceTrim++;
+    if (this.writesSinceTrim < this.TRIM_INTERVAL) return;
+    this.writesSinceTrim = 0;
 
     try {
       const { events: stored, total } = await this.storage.queryEvents({

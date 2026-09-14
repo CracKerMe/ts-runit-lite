@@ -24,6 +24,30 @@ interface HistogramValue {
   labels: Record<string, string>;
 }
 
+/**
+ * 单个指标允许的最大时间序列数。
+ *
+ * 指标 Map 从不驱逐，所以任何带调用方可控标签的指标都可能被无限撑大。
+ * 超过上限后新标签组合统一并入 `overflow` 桶：counter 语义下按 TTL 驱逐
+ * 会表现为计数回退，硬上限 + 溢出桶才是正确做法。
+ */
+const MAX_SERIES_PER_METRIC = 1000;
+const OVERFLOW_LABEL = "overflow";
+
+/**
+ * 超过基数上限时，把整组标签折叠成单一的溢出组合。
+ *
+ * 必须折叠**所有**标签：无界的维度可能是任意一个（对 API 指标而言是
+ * path），只折叠其中之一仍会让每个新取值产生一条新序列。
+ */
+function overflowLabels(labelNames: string[]): Record<string, string> {
+  const collapsed: Record<string, string> = {};
+  for (const name of labelNames) {
+    collapsed[name] = OVERFLOW_LABEL;
+  }
+  return collapsed;
+}
+
 class Counter {
   private values = new Map<string, MetricValue>();
 
@@ -34,13 +58,24 @@ class Counter {
   ) {}
 
   inc(labels: Record<string, string> = {}, value = 1): void {
-    const key = this.labelsToKey(labels);
+    let key = this.labelsToKey(labels);
+    let effectiveLabels = labels;
+
+    if (!this.values.has(key) && this.values.size >= MAX_SERIES_PER_METRIC) {
+      effectiveLabels = overflowLabels(this.labelNames);
+      key = this.labelsToKey(effectiveLabels);
+    }
+
     const existing = this.values.get(key);
     if (existing) {
       existing.value += value;
       existing.timestamp = Date.now();
     } else {
-      this.values.set(key, { value, labels, timestamp: Date.now() });
+      this.values.set(key, {
+        value,
+        labels: effectiveLabels,
+        timestamp: Date.now(),
+      });
     }
   }
 
@@ -145,7 +180,14 @@ class Histogram {
   }
 
   observe(labels: Record<string, string>, value: number): void {
-    const key = this.labelsToKey(labels);
+    let key = this.labelsToKey(labels);
+    let effectiveLabels = labels;
+
+    if (!this.values.has(key) && this.values.size >= MAX_SERIES_PER_METRIC) {
+      effectiveLabels = overflowLabels(this.labelNames);
+      key = this.labelsToKey(effectiveLabels);
+    }
+
     let existing = this.values.get(key);
 
     if (!existing) {
@@ -153,7 +195,7 @@ class Histogram {
         buckets: this.buckets.map((le) => ({ le, count: 0 })),
         sum: 0,
         count: 0,
-        labels,
+        labels: effectiveLabels,
       };
       this.values.set(key, existing);
     }

@@ -174,7 +174,9 @@ export class WebhookManager {
   private async saveDelivery(delivery: WebhookDelivery): Promise<void> {
     this.deliveries.set(delivery.id, delivery);
     await this.storage?.saveWebhookDeliveryEntry?.(delivery);
-    await this.cleanupExpiredDeliveries();
+    // 此处原本每次状态流转都触发一次全量 cleanupExpiredDeliveries()
+    // 扫描（一次投递要经历 pending→retry→…→failed 多次流转），
+    // 而 startCleanupScheduler 的小时级定时器已经覆盖了保留策略。
   }
 
   private isTerminalDeliveryStatus(status: WebhookDelivery["status"]): boolean {

@@ -35,6 +35,20 @@ export interface DeadLetterEntry {
  */
 export class DeadLetterQueue {
   private entries: DeadLetterEntry[] = [];
+  /**
+   * id -> entry 索引，与 entries 数组保持同步。
+   * entries 数组保留插入顺序（push/shift 实现 FIFO 与容量淘汰），
+   * 而按 id 查找原本是 O(n) 线性扫描：批量重试 100 条要做数万次比较。
+   */
+  private entryIndex = new Map<string, DeadLetterEntry>();
+
+  /** 整体替换 entries 后重建索引。 */
+  private rebuildIndex(): void {
+    this.entryIndex.clear();
+    for (const entry of this.entries) {
+      this.entryIndex.set(entry.id, entry);
+    }
+  }
   private readonly maxSize: number;
   private idCounter = 0;
   // The legacy Redis-shaped fields are retained for API compatibility. The
@@ -70,6 +84,7 @@ export class DeadLetterQueue {
       return { ...entry, failedAt: new Date(entry.failedAt) };
     });
     this.entries.sort((a, b) => a.failedAt.getTime() - b.failedAt.getTime());
+    this.rebuildIndex();
     this.idCounter = this.entries.reduce((max, entry) => {
       const suffix = Number.parseInt(entry.id.split("_").pop() ?? "0", 10);
       return Number.isFinite(suffix) ? Math.max(max, suffix) : max;
@@ -144,6 +159,7 @@ export class DeadLetterQueue {
     if (this.entries.length >= this.maxSize) {
       const removed = this.entries.shift();
       if (removed) {
+        this.entryIndex.delete(removed.id);
         await this.storage?.deleteDeadLetterEntry?.(removed.id);
         Logger.warn(
           "system",
@@ -154,6 +170,7 @@ export class DeadLetterQueue {
     }
 
     this.entries.push(fullEntry);
+    this.entryIndex.set(fullEntry.id, fullEntry);
     await this.persistEntry(fullEntry);
     Logger.info("system", "dlq", `Added entry to DLQ: ${id}`, {
       type: entry.type,
@@ -180,6 +197,7 @@ export class DeadLetterQueue {
     }
     const entry = this.entries.shift();
     if (entry) {
+      this.entryIndex.delete(entry.id);
       await this.storage?.deleteDeadLetterEntry?.(entry.id);
       Logger.debug("system", "dlq", `Popped entry from DLQ: ${entry.id}`);
     }
@@ -198,7 +216,7 @@ export class DeadLetterQueue {
       parsed.failedAt = new Date(parsed.failedAt);
       return parsed;
     }
-    return this.entries.find((e) => e.id === id) || null;
+    return this.entryIndex.get(id) ?? null;
   }
 
   /**
@@ -285,11 +303,16 @@ export class DeadLetterQueue {
       return true;
     }
 
+    if (!this.entryIndex.has(id)) {
+      return false;
+    }
     const index = this.entries.findIndex((e) => e.id === id);
     if (index === -1) {
+      this.entryIndex.delete(id);
       return false;
     }
     this.entries.splice(index, 1);
+    this.entryIndex.delete(id);
     await this.storage?.deleteDeadLetterEntry?.(id);
     Logger.debug("system", "dlq", `Removed entry from DLQ: ${id}`);
     return true;
@@ -332,6 +355,7 @@ export class DeadLetterQueue {
       ),
     );
     this.entries = [];
+    this.entryIndex.clear();
     Logger.info("system", "dlq", `Cleared ${count} entries from DLQ`);
     return count;
   }
@@ -409,7 +433,7 @@ export class DeadLetterQueue {
       return true;
     }
 
-    const entry = this.entries.find((e) => e.id === id);
+    const entry = this.entryIndex.get(id);
     if (!entry) return false;
     entry.status = status;
     if (notes !== undefined) entry.notes = notes;
@@ -433,7 +457,7 @@ export class DeadLetterQueue {
       return entry.retryCount;
     }
 
-    const entry = this.entries.find((e) => e.id === id);
+    const entry = this.entryIndex.get(id);
     if (!entry) {
       throw new Error(`DLQ entry not found: ${id}`);
     }
