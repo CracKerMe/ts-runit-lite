@@ -1,5 +1,5 @@
 import type { StorageProvider } from "./storage/StorageProvider";
-import { Logger } from "./utils/Logger";
+import { flush as flushLogger, Logger } from "./utils/Logger";
 
 export interface ShutdownOptions {
   timeout?: number; // 关闭超时时间（毫秒），默认 30 秒
@@ -73,6 +73,7 @@ export class GracefulShutdown {
 
         clearTimeout(forceExitTimeout);
         Logger.info("system", "shutdown", "Graceful shutdown completed");
+        await flushLogger();
         process.exit(0);
       } catch (error) {
         clearTimeout(forceExitTimeout);
@@ -82,6 +83,7 @@ export class GracefulShutdown {
           "Error during shutdown",
           error instanceof Error ? error.stack : String(error),
         );
+        await flushLogger();
         process.exit(1);
       }
     };

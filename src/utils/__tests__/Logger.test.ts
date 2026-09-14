@@ -43,13 +43,15 @@ describe("Logger", () => {
   });
 
   describe("log()", () => {
-    it("should write to the daily log file", () => {
+    it("should write to the daily log file", async () => {
       Logger.log("inst-1", "node-1", "Task started");
+      await Logger.flush();
       expect(readLoggedLines(logDir)).toHaveLength(1);
     });
 
-    it("should include message and context in output", () => {
+    it("should include message and context in output", async () => {
       Logger.log("inst-1", "node-1", "Task started", { orderId: "123" });
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("Task started");
       expect(output).toContain("inst-1");
@@ -57,84 +59,96 @@ describe("Logger", () => {
   });
 
   describe("debug()", () => {
-    it("should write to the daily log file", () => {
+    it("should write to the daily log file", async () => {
       Logger.debug("system", "storage", "debug message");
+      await Logger.flush();
       expect(readLoggedLines(logDir)).toHaveLength(1);
     });
   });
 
   describe("info()", () => {
-    it("should write to the daily log file", () => {
+    it("should write to the daily log file", async () => {
       Logger.info("system", "engine", "Engine started");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("Engine started");
     });
   });
 
   describe("warn()", () => {
-    it("should write to the daily log file", () => {
+    it("should write to the daily log file", async () => {
       Logger.warn("system", "scheduler", "Job skipped");
+      await Logger.flush();
       expect(readLoggedLines(logDir)).toHaveLength(1);
     });
 
-    it("should include the warning message", () => {
+    it("should include the warning message", async () => {
       Logger.warn("system", "cleanup", "Stale instances removed", { count: 3 });
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("Stale instances removed");
     });
   });
 
   describe("error()", () => {
-    it("should write to the daily log file", () => {
+    it("should write to the daily log file", async () => {
       Logger.error("system", "storage", "Connection failed");
+      await Logger.flush();
       expect(readLoggedLines(logDir)).toHaveLength(1);
     });
 
-    it("should include error message and optional stack", () => {
+    it("should include error message and optional stack", async () => {
       Logger.error(
         "system",
         "engine",
         "Unexpected crash",
         "Error: crash\n  at ...",
       );
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("Unexpected crash");
     });
   });
 
   describe("prefix resolution", () => {
-    it("should use [TASK] prefix for context2 containing 'task'", () => {
+    it("should use [TASK] prefix for context2 containing 'task'", async () => {
       Logger.log("inst-1", "task-runner", "msg");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("[TASK]");
     });
 
-    it("should use [ENGINE] prefix for context2 containing 'engine'", () => {
+    it("should use [ENGINE] prefix for context2 containing 'engine'", async () => {
       Logger.log("inst-1", "engine-core", "msg");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("[ENGINE]");
     });
 
-    it("should use [SYSTEM] prefix for context2 containing 'system'", () => {
+    it("should use [SYSTEM] prefix for context2 containing 'system'", async () => {
       Logger.log("ctx", "system-check", "msg");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("[SYSTEM]");
     });
 
-    it("should use [EVENT] prefix for context2 containing 'event'", () => {
+    it("should use [EVENT] prefix for context2 containing 'event'", async () => {
       Logger.log("ctx", "event-bus", "msg");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("[EVENT]");
     });
 
-    it("should default to [WORKFLOW] for unrecognized context2", () => {
+    it("should default to [WORKFLOW] for unrecognized context2", async () => {
       Logger.log("ctx", "random-context", "msg");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("[WORKFLOW]");
     });
 
-    it("should respect explicit nodeType over context2 inference (action → TASK)", () => {
+    it("should respect explicit nodeType over context2 inference (action → TASK)", async () => {
       Logger.log("ctx", "engine", "msg", undefined, "action");
+      await Logger.flush();
       const [output] = readLoggedLines(logDir);
       expect(output).toContain("[TASK]");
     });
@@ -149,16 +163,18 @@ describe("Logger", () => {
       expect(typeof Logger.Logger.error).toBe("function");
       expect(typeof Logger.Logger.setLevel).toBe("function");
       expect(typeof Logger.Logger.getLevel).toBe("function");
+      expect(typeof Logger.Logger.flush).toBe("function");
     });
   });
 
   describe("log levels", () => {
-    it("should suppress messages below the configured level", () => {
+    it("should suppress messages below the configured level", async () => {
       Logger.setLogLevel("WARN");
 
       Logger.debug("system", "storage", "debug message");
       Logger.info("system", "engine", "info message");
       Logger.warn("system", "scheduler", "warn message");
+      await Logger.flush();
 
       const lines = readLoggedLines(logDir);
       expect(lines).toHaveLength(1);
@@ -191,6 +207,7 @@ describe("Logger", () => {
       fs.writeFileSync(path.join(logDir, `${staleDate}.log`), "old\n");
 
       Logger.info("system", "engine", "trigger cleanup");
+      await Logger.flush();
       // cleanup runs asynchronously after the write
       await new Promise((resolve) => setTimeout(resolve, 50));
 

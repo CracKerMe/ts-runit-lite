@@ -88,13 +88,16 @@ describe("DeadLetterQueue – id index consistency", () => {
 
   it("keeps lookups correct across many mixed operations", async () => {
     const live = new Set<string>();
+    const allIds: string[] = [];
     for (let i = 0; i < 200; i++) {
-      live.add(await pushEntry(`e${i}`));
+      const id = await pushEntry(`e${i}`);
+      live.add(id);
+      allIds.push(id);
     }
 
-    // 删掉一半
+    // 删掉一半——遍历独立的 id 快照，避免在遍历 live 的同时修改它
     let n = 0;
-    for (const id of [...live]) {
+    for (const id of allIds) {
       if (n++ % 2 === 0) {
         await dlq.remove(id);
         live.delete(id);

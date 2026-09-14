@@ -103,6 +103,86 @@ function getDateStr(date = new Date()): string {
 }
 
 const lastCleanupDateByDir = new Map<string, string>();
+const ensuredDirs = new Set<string>();
+
+/**
+ * 按目标文件缓冲待写入的行，异步 flush。
+ *
+ * 原先每条日志都同步 mkdirSync + appendFileSync，会在请求路径、节点流转
+ * 等热路径上阻塞事件循环——日志量越大，阻塞越明显。这里改为内存缓冲 +
+ * 定时/阈值触发的异步批量写入；flush() 暴露给测试和优雅关闭钩子，
+ * 保证在需要"写完即可读"的地方仍然可以显式等待。
+ */
+const pendingLines = new Map<string, string[]>();
+const flushTimers = new Map<string, NodeJS.Timeout>();
+/** 缓冲行数达到该阈值时立即 flush，不等定时器。 */
+const FLUSH_SIZE_THRESHOLD = 200;
+/** 定时 flush 的间隔（毫秒）。 */
+const FLUSH_INTERVAL_MS = 100;
+/** 是否强制同步写入（测试环境按需开启，规避异步时序问题）。 */
+function isSyncMode(): boolean {
+  return process.env.LOG_SYNC === "1" || process.env.LOG_SYNC === "true";
+}
+
+function ensureDir(dir: string): boolean {
+  if (ensuredDirs.has(dir)) return true;
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    ensuredDirs.add(dir);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function maybeScheduleCleanup(dir: string, dateStr: string): void {
+  if (lastCleanupDateByDir.get(dir) !== dateStr) {
+    lastCleanupDateByDir.set(dir, dateStr);
+    void cleanupOldLogs(dir, dateStr);
+  }
+}
+
+/**
+ * 把某个文件缓冲的行同步落盘，并清空该文件的缓冲区与定时器。
+ * 写入失败时静默忽略，避免日志功能影响主业务流程。
+ */
+function flushFileSync(filePath: string): void {
+  const timer = flushTimers.get(filePath);
+  if (timer) {
+    clearTimeout(timer);
+    flushTimers.delete(filePath);
+  }
+
+  const lines = pendingLines.get(filePath);
+  if (!lines || lines.length === 0) return;
+  pendingLines.delete(filePath);
+
+  try {
+    fs.appendFileSync(filePath, lines.join(""), "utf8");
+  } catch {
+    // 忽略写入失败
+  }
+}
+
+/**
+ * 把所有文件缓冲的行异步落盘。供测试与优雅关闭钩子显式等待。
+ */
+export async function flush(): Promise<void> {
+  const filePaths = new Set([...pendingLines.keys(), ...flushTimers.keys()]);
+  for (const filePath of filePaths) {
+    flushFileSync(filePath);
+  }
+}
+
+// 进程退出前的兜底：flushFileSync 内部只用同步的 appendFileSync，
+// 在 "exit" 事件里调用是安全的（不能用异步 I/O，但这里不需要）。
+// 保证优雅关闭路径之外的退出（测试运行器、CLI 完成）也不丢尾部日志。
+process.on("exit", () => {
+  const filePaths = new Set([...pendingLines.keys(), ...flushTimers.keys()]);
+  for (const filePath of filePaths) {
+    flushFileSync(filePath);
+  }
+});
 
 /**
  * 按天写入日志文件（YYYY-MM-DD.log），不再输出到控制台。
@@ -110,16 +190,38 @@ const lastCleanupDateByDir = new Map<string, string>();
  */
 function writeLogLine(line: string): void {
   const dir = getLogDir();
-  try {
-    fs.mkdirSync(dir, { recursive: true });
-    const dateStr = getDateStr();
-    fs.appendFileSync(path.join(dir, `${dateStr}.log`), `${line}\n`, "utf8");
-    if (lastCleanupDateByDir.get(dir) !== dateStr) {
-      lastCleanupDateByDir.set(dir, dateStr);
-      void cleanupOldLogs(dir, dateStr);
+  if (!ensureDir(dir)) return;
+
+  const dateStr = getDateStr();
+  const filePath = path.join(dir, `${dateStr}.log`);
+  maybeScheduleCleanup(dir, dateStr);
+
+  if (isSyncMode()) {
+    try {
+      fs.appendFileSync(filePath, `${line}\n`, "utf8");
+    } catch {
+      // 忽略写入失败
     }
-  } catch {
-    // 忽略写入失败
+    return;
+  }
+
+  let buffer = pendingLines.get(filePath);
+  if (!buffer) {
+    buffer = [];
+    pendingLines.set(filePath, buffer);
+  }
+  buffer.push(`${line}\n`);
+
+  if (buffer.length >= FLUSH_SIZE_THRESHOLD) {
+    flushFileSync(filePath);
+    return;
+  }
+
+  if (!flushTimers.has(filePath)) {
+    const timer = setTimeout(() => flushFileSync(filePath), FLUSH_INTERVAL_MS);
+    // 不能让日志刷新定时器阻止进程退出
+    timer.unref?.();
+    flushTimers.set(filePath, timer);
   }
 }
 
@@ -299,6 +401,7 @@ export const Logger = {
   error,
   setLevel: setLogLevel,
   getLevel: getLogLevel,
+  flush,
 };
 
 /** Extract a human-readable message from an unknown caught error. */
