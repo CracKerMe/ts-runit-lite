@@ -325,13 +325,19 @@ function parseEnvBoolean(
   return value === "true" || value === "1";
 }
 
+/**
+ * 解析数值型环境变量（允许小数，用于比例/倍率等配置）。
+ * 空串、非数字、NaN、Infinity 一律回退默认值——`Number("")` 为 0，
+ * 直接用 `Number.isNaN` 判断会把未设置的变量当成 0。
+ * 需要整数语义时请使用 `utils/env.ts` 的 `parseEnvInt`。
+ */
 function parseEnvNumber(
   value: string | undefined,
   defaultValue: number,
 ): number {
-  if (value === undefined) return defaultValue;
+  if (value === undefined || value.trim() === "") return defaultValue;
   const parsed = Number(value);
-  return Number.isNaN(parsed) ? defaultValue : parsed;
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
 /**
