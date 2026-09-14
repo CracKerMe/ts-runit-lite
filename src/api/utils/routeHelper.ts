@@ -10,41 +10,17 @@
  */
 import type { Request, Response } from "express";
 import { validationResult } from "express-validator";
-import { ServiceError } from "../services/WorkflowApplicationService";
 
 /**
- * Wrap an async route handler with consistent error handling.
- * Catches ServiceError and maps to appropriate HTTP status codes.
+ * 统一的异步路由包装器。
+ *
+ * 这里曾有第二份 asyncHandler 实现：它从不调用 next(error)，而是自行拼装
+ * 响应——把原始的 error.message 直接返回给客户端（生产环境也不例外，绕过
+ * errorHandler 的脱敏），并且丢掉 ApiError.statusCode，使
+ * `ApiError.notFound(...)` 变成 500。ServiceError 的 statusCode 映射已迁入
+ * errorHandler，这里改为直接复用唯一正确的实现。
  */
-export function asyncHandler(
-  fn: (req: Request, res: Response) => Promise<void>,
-): (req: Request, res: Response) => void {
-  return (req, res) => {
-    fn(req, res).catch((error: unknown) => {
-      if (error instanceof ServiceError) {
-        const body: Record<string, unknown> = {
-          success: false,
-          error: error.code,
-          message: error.message,
-        };
-        if (error.details !== undefined) {
-          body.details = error.details;
-        }
-        res.status(error.statusCode).json(body);
-        return;
-      }
-
-      const message =
-        error instanceof Error ? error.message : "Internal server error";
-
-      res.status(500).json({
-        success: false,
-        error: "INTERNAL_ERROR",
-        message,
-      });
-    });
-  };
-}
+export { asyncHandler } from "../ErrorHandler";
 
 /**
  * Build a success response body.

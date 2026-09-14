@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { Logger } from "../utils/Logger";
 import { createErrorResponse } from "./response";
+import { ServiceError } from "./services/WorkflowApplicationService";
 
 /**
  * 错误码枚举
@@ -136,15 +137,30 @@ export function errorHandler(
   _next: NextFunction,
 ) {
   const isApiError = err instanceof ApiError;
+  // ServiceError 由应用服务层抛出，自带 statusCode/code/details。
+  // 这个映射原本在 routeHelper 的 asyncHandler 里；该实现已被统一到本
+  // 中间件，映射必须一并迁移过来，否则一批 4xx 会退化成 5xx。
+  const isServiceError = err instanceof ServiceError;
 
   // 获取错误详情
-  const statusCode = isApiError ? err.statusCode : 500;
-  const errorCode = isApiError ? err.errorCode : ErrorCode.UNKNOWN_ERROR;
-  const message = isApiError
-    ? err.message
-    : process.env.NODE_ENV === "production"
-      ? "服务器内部错误"
-      : err.message || "未知错误";
+  const statusCode = isApiError
+    ? err.statusCode
+    : isServiceError
+      ? err.statusCode
+      : 500;
+  // ServiceError.code 是自由字符串（如 "WORKFLOW_NOT_FOUND"），不是
+  // ErrorCode 枚举成员，原样透出即可——之前 routeHelper 也是这么做的。
+  const errorCode: ErrorCode | string = isApiError
+    ? err.errorCode
+    : isServiceError
+      ? err.code
+      : ErrorCode.UNKNOWN_ERROR;
+  const message =
+    isApiError || isServiceError
+      ? err.message
+      : process.env.NODE_ENV === "production"
+        ? "服务器内部错误"
+        : err.message || "未知错误";
 
   // 记录错误日志
   const logLevel = statusCode >= 500 ? "error" : "warn";
@@ -165,6 +181,9 @@ export function errorHandler(
       message,
       path: req.path,
       ...(isApiError && err.context ? { context: err.context } : {}),
+      ...(isServiceError && err.details !== undefined
+        ? { details: err.details }
+        : {}),
     }),
   );
 }
