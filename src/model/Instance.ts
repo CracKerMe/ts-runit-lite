@@ -1,4 +1,6 @@
 // oxlint-disable no-explicit-any -- dynamic types used throughout this module
+import { parseEnvInt } from "../utils/env";
+
 export type InstanceStatus =
   | "pending"
   | "running"
@@ -49,4 +51,32 @@ export interface ExecutionLog {
   data?: Record<string, unknown> | unknown;
   duration?: number; // 任务执行时长（毫秒）
   stack?: string; // 错误堆栈信息
+}
+
+/**
+ * instance.history 的条数上限。
+ *
+ * 每次节点流转都会把整个实例（含完整 history）深拷贝并序列化落盘，
+ * 所以 N 次流转会写出 Θ(N²) 字节。不设上限时，长实例的持久化开销
+ * 会随执行时间平方级增长。
+ */
+export function getMaxInstanceHistory(): number {
+  return parseEnvInt(process.env.MAX_INSTANCE_HISTORY, 1000, { min: 1 });
+}
+
+/**
+ * 追加一条执行日志，并把 history 裁剪到上限以内。
+ *
+ * 从头部裁剪，保留最近的条目——排查问题时看的是最新的执行轨迹。
+ */
+export function appendHistory(
+  instance: WorkflowInstance,
+  entry: ExecutionLog,
+): void {
+  instance.history.push(entry);
+
+  const max = getMaxInstanceHistory();
+  if (instance.history.length > max) {
+    instance.history.splice(0, instance.history.length - max);
+  }
 }

@@ -1,6 +1,7 @@
 import { createHookPayload, hookManager } from "../event/HookManager";
 import { recordNodeRetry } from "../metrics/index";
 import type { WorkflowInstance } from "../model/Instance";
+import { appendHistory } from "../model/Instance";
 import type { TaskNode } from "../model/Workflow";
 import { Logger } from "../utils/Logger";
 import type { InstanceManager } from "./InstanceManager";
@@ -90,7 +91,7 @@ export class WorkflowInstanceControl {
       }),
     );
 
-    instance.history.push({
+    appendHistory(instance, {
       nodeId,
       timestamp: new Date(),
       status: "skipped",
@@ -176,7 +177,7 @@ export class WorkflowInstanceControl {
         if (rollbackNode.action) {
           const startTime = Date.now();
           await rollbackNode.action(instance);
-          instance.history.push({
+          appendHistory(instance, {
             nodeId: rollbackNodeId,
             timestamp: new Date(),
             status: "rollback",
@@ -191,7 +192,7 @@ export class WorkflowInstanceControl {
           "Compensation node failed",
           err.stack,
         );
-        instance.history.push({
+        appendHistory(instance, {
           nodeId: rollbackNodeId,
           timestamp: new Date(),
           status: "failed",

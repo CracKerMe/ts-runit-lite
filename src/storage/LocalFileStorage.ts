@@ -417,7 +417,9 @@ export class LocalFileStorage extends MemoryStorage {
     const key = this.filePath(collection, id);
     const operation = async () => {
       const temp = `${key}.${process.pid}.${Date.now()}.tmp`;
-      await fs.promises.writeFile(temp, JSON.stringify(value, null, 2), "utf8");
+      // 不做缩进：每次节点流转都会整体重写实例文件，2 空格缩进会把
+      // I/O 放大 2-3 倍而没有任何运行时收益（需要可读性时用 jq）。
+      await fs.promises.writeFile(temp, JSON.stringify(value), "utf8");
       await fs.promises.rename(temp, key);
     };
     const previous = this.writeQueues.get(key) ?? Promise.resolve();

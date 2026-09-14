@@ -2,6 +2,7 @@
 import { workflowDebugger } from "../debug/WorkflowDebugger";
 import { recordNodeExecution } from "../metrics/index";
 import type { ExecutionLog, WorkflowInstance } from "../model/Instance";
+import { appendHistory } from "../model/Instance";
 import type { TaskNode } from "../model/Workflow";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { Logger } from "../utils/Logger";
@@ -35,7 +36,7 @@ export async function execute(
     status: "started",
   };
 
-  instance.history.push(logEntry);
+  appendHistory(instance, logEntry);
   Logger.log(instance.instanceId, node.id, "Task started", undefined, "action");
   workflowDebugger.onNodeEnter(instance.instanceId, node.id, {
     ...instance.context,

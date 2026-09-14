@@ -3,6 +3,7 @@ import type { EventCoordinator } from "../event/EventCoordinator";
 import { createHookPayload, hookManager } from "../event/HookManager";
 import { recordNodeExecution } from "../metrics/index";
 import type { ExecutionLog, WorkflowInstance } from "../model/Instance";
+import { appendHistory } from "../model/Instance";
 import {
   calculateRetryDelay,
   isRetryableError,
@@ -502,7 +503,7 @@ export class ExecutionOrchestrator {
               timestamp: new Date(),
               status: "started",
             };
-            instance.history.push(logEntry);
+            appendHistory(instance, logEntry);
 
             if (storage) {
               storage
