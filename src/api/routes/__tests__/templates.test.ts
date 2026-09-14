@@ -90,4 +90,62 @@ describe("templates routes", () => {
     expect(res.status).toBe(400);
     expect(res.body.success).toBe(false);
   });
+
+  describe("POST /templates/extract – directory confinement", () => {
+    // 安全回归守卫：directory 曾被直接喂给 readdirSync/readFileSync，
+    // 且文件内容会回显在响应体里，构成任意目录读取。
+    const escapes = [
+      ["parent traversal", "../../.."],
+      ["absolute path", "/etc"],
+      ["absolute path to sensitive dir", "/var/root"],
+      ["traversal mixed with a valid segment", "practices-demo/../../.."],
+      ["null byte injection", "practices-demo\0/etc"],
+      ["sibling dir sharing the root prefix", "../ts-runit-lite-evil"],
+    ] as const;
+
+    for (const [label, directory] of escapes) {
+      it(`rejects ${label}`, async () => {
+        const app = buildApp();
+
+        const res = await supertest(app)
+          .post("/templates/extract")
+          .send({ directory });
+
+        expect(res.status).toBe(400);
+        expect(res.body.success).toBe(false);
+        expect(res.body).not.toHaveProperty("data");
+      });
+    }
+
+    it("rejects a non-string directory", async () => {
+      const app = buildApp();
+
+      const res = await supertest(app)
+        .post("/templates/extract")
+        .send({ directory: { toString: "evil" } });
+
+      expect(res.status).toBe(400);
+    });
+
+    it("accepts a directory inside the root", async () => {
+      const app = buildApp();
+
+      const res = await supertest(app)
+        .post("/templates/extract")
+        .send({ directory: "practices-demo" });
+
+      // 目录可能不存在，但不应是 400 —— 路径本身是合法的
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+
+    it("defaults to practices-demo when no directory is given", async () => {
+      const app = buildApp();
+
+      const res = await supertest(app).post("/templates/extract").send({});
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+    });
+  });
 });
