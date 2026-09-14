@@ -420,6 +420,159 @@ describe("LoopNodeExecutor", () => {
       expect(maxConcurrent).toBeLessThanOrEqual(2);
     });
 
+    it("should actually enforce maxConcurrency over a long collection", async () => {
+      // 并发池的行为守卫：现有实现依赖 .finally 从 Set 中移除自己。
+      // 集合远长于并发上限，确保滑动窗口在多轮补位后仍不超限。
+      mockInstance.context.many = Array.from({ length: 40 }, (_, i) => i);
+
+      const config: LoopNodeConfig = {
+        collection: "many",
+        itemVariable: "n",
+        body: "process-node",
+        parallel: true,
+        maxConcurrency: 3,
+      };
+
+      let inFlight = 0;
+      let peak = 0;
+      const executeBody = vi.fn(async (itemContext: Record<string, any>) => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight--;
+        return itemContext.n;
+      });
+
+      const result = await LoopNodeExecutor.execute(
+        config,
+        mockInstance,
+        executeBody,
+      );
+
+      expect(peak).toBeLessThanOrEqual(3);
+      expect(result.iterations).toBe(40);
+      expect(result.results).toEqual(Array.from({ length: 40 }, (_, i) => i));
+    });
+
+    it("should not emit unhandled rejections when an iteration fails", async () => {
+      // 失败路径的安全守卫：某个迭代失败时，其余在途 promise 必须被
+      // drain 且其拒绝必须有 handler，否则会变成 unhandledRejection
+      // （Node ≥15 默认终止进程）。
+      mockInstance.context.many = Array.from({ length: 20 }, (_, i) => i);
+
+      const config: LoopNodeConfig = {
+        collection: "many",
+        itemVariable: "n",
+        body: "process-node",
+        parallel: true,
+        maxConcurrency: 3,
+      };
+
+      const unhandled: unknown[] = [];
+      const onUnhandled = (reason: unknown): void => {
+        unhandled.push(reason);
+      };
+      process.on("unhandledRejection", onUnhandled);
+
+      try {
+        const executeBody = vi.fn(async (itemContext: Record<string, any>) => {
+          await new Promise((resolve) => setTimeout(resolve, 5));
+          if (itemContext.n === 0) throw new Error("boom");
+          return itemContext.n;
+        });
+
+        await expect(
+          LoopNodeExecutor.execute(config, mockInstance, executeBody),
+        ).rejects.toThrow("Loop iteration 0 failed: boom");
+
+        // 让所有在途 promise 的结算落地
+        await new Promise((resolve) => setTimeout(resolve, 50));
+
+        expect(unhandled).toEqual([]);
+      } finally {
+        process.off("unhandledRejection", onUnhandled);
+      }
+    });
+
+    it("should fall back to unbounded concurrency when the limit is not a usable number", async () => {
+      // MAX_CONCURRENT_NODES=abc 会让上限变成 NaN；`size >= NaN` 恒为 false，
+      // 旧代码会静默地完全不限流。这里断言至少不会卡死或串行化。
+      const config: LoopNodeConfig = {
+        collection: "numbers",
+        itemVariable: "num",
+        body: "process-node",
+        parallel: true,
+        maxConcurrency: Number.NaN,
+      };
+
+      const executeBody = vi.fn(async (itemContext: Record<string, any>) => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return itemContext.num * 2;
+      });
+
+      const result = await LoopNodeExecutor.execute(
+        config,
+        mockInstance,
+        executeBody,
+      );
+
+      expect(result.results).toEqual([2, 4, 6, 8, 10]);
+      expect(executeBody).toHaveBeenCalledTimes(5);
+    });
+  });
+
+  describe("execute - iteration cap", () => {
+    it("should reject a collection larger than MAX_LOOP_ITERATIONS before running any body", async () => {
+      const previous = process.env.MAX_LOOP_ITERATIONS;
+      process.env.MAX_LOOP_ITERATIONS = "5";
+
+      try {
+        mockInstance.context.many = Array.from({ length: 6 }, (_, i) => i);
+        const config: LoopNodeConfig = {
+          collection: "many",
+          itemVariable: "n",
+          body: "process-node",
+        };
+
+        const executeBody = vi.fn(async () => ({}));
+
+        await expect(
+          LoopNodeExecutor.execute(config, mockInstance, executeBody),
+        ).rejects.toThrow("exceeds the limit of 5");
+
+        expect(executeBody).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) delete process.env.MAX_LOOP_ITERATIONS;
+        else process.env.MAX_LOOP_ITERATIONS = previous;
+      }
+    });
+
+    it("should allow a collection exactly at the limit", async () => {
+      const previous = process.env.MAX_LOOP_ITERATIONS;
+      process.env.MAX_LOOP_ITERATIONS = "5";
+
+      try {
+        mockInstance.context.many = Array.from({ length: 5 }, (_, i) => i);
+        const config: LoopNodeConfig = {
+          collection: "many",
+          itemVariable: "n",
+          body: "process-node",
+        };
+
+        const executeBody = vi.fn(async (ctx: Record<string, any>) => ctx.n);
+        const result = await LoopNodeExecutor.execute(
+          config,
+          mockInstance,
+          executeBody,
+        );
+
+        expect(result.iterations).toBe(5);
+      } finally {
+        if (previous === undefined) delete process.env.MAX_LOOP_ITERATIONS;
+        else process.env.MAX_LOOP_ITERATIONS = previous;
+      }
+    });
+
     it("should handle empty array in parallel mode", async () => {
       const config: LoopNodeConfig = {
         collection: "emptyArray",

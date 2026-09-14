@@ -1,8 +1,14 @@
 // oxlint-disable no-explicit-any -- Loop executor handles dynamic collection/item types
 import type { WorkflowInstance } from "../../model/Instance";
+import { parseEnvInt } from "../../utils/env";
 import { Logger } from "../../utils/Logger";
 import { getConcurrencyControl } from "../ConcurrencyControl";
 import { evaluate, interpolateObject } from "../ExpressionEvaluator";
+
+/** 单个 loop 节点允许的最大迭代次数。 */
+function getMaxLoopIterations(): number {
+  return parseEnvInt(process.env.MAX_LOOP_ITERATIONS, 10_000, { min: 1 });
+}
 
 /**
  * Loop node configuration
@@ -159,9 +165,16 @@ async function executeParallel(
 ): Promise<any[]> {
   // Falls back to the engine-wide MAX_CONCURRENT_NODES setting when the
   // loop node doesn't specify its own limit.
-  const maxConcurrency =
+  //
+  // 必须挡住 NaN 与 <=0：`executing.size >= NaN` 恒为 false（并发上限静默
+  // 失效），`>= 0` 恒为 true（每调度一个就 await，退化为串行）。
+  const configuredConcurrency =
     config.maxConcurrency ??
     getConcurrencyControl().getConfig().maxConcurrentNodesPerInstance;
+  const maxConcurrency =
+    Number.isFinite(configuredConcurrency) && configuredConcurrency >= 1
+      ? Math.trunc(configuredConcurrency)
+      : collection.length;
 
   Logger.log(
     instance.instanceId,
@@ -207,25 +220,34 @@ async function executeParallel(
     return await Promise.all(promises);
   }
 
-  // Execute with concurrency limit using a sliding window approach
+  // 有界并发池。
+  //
+  // 旧实现每次补位都要遍历整个池，用
+  // `Promise.race([p, Promise.resolve("pending")])` 逐个探测哪些已结算，
+  // 每个窗口 O(n) 次 race、整体 O(n²)，且正确性依赖「已结算的 promise 会
+  // 赢过另一个已结算的 promise」这一微妙的微任务顺序语义。
+  //
+  // 现在改为：.finally 在结算时确定性地把自己从 Set 中移除，补位只需一次
+  // race；.catch 记录首个错误而不 re-throw，末尾无条件 drain 完所有在途
+  // 任务后再抛出，保证没有任何被遗弃、无 handler 的在途 promise。
   const results: any[] = Array.from({ length: collection.length });
-  const executing: Promise<void>[] = [];
+  const executing = new Set<Promise<void>>();
+  let firstError: Error | undefined;
 
-  for (let i = 0; i < collection.length; i++) {
-    const index = i;
-    const item = collection[index];
+  for (let index = 0; index < collection.length; index++) {
+    // 已有迭代失败时停止调度新迭代，但仍要 drain 已在途的
+    if (firstError) break;
 
     // Build context for this iteration
     const itemContext: Record<string, any> = {
-      [config.itemVariable]: item,
+      [config.itemVariable]: collection[index],
     };
 
     if (config.indexVariable) {
       itemContext[config.indexVariable] = index;
     }
 
-    // Create promise for this iteration
-    const promise = executeBody(itemContext, index)
+    const promise: Promise<void> = executeBody(itemContext, index)
       .then((result) => {
         results[index] = result;
 
@@ -242,28 +264,26 @@ async function executeParallel(
           `Parallel iteration ${index + 1}/${collection.length} failed: ${error.message}`,
           error?.stack,
         );
-        throw new Error(`Loop iteration ${index} failed: ${error.message}`);
+        firstError ??= new Error(
+          `Loop iteration ${index} failed: ${error.message}`,
+          { cause: error },
+        );
+      })
+      .finally(() => {
+        executing.delete(promise);
       });
 
-    executing.push(promise);
+    executing.add(promise);
 
-    // If we've reached max concurrency, wait for one to complete
-    if (executing.length >= maxConcurrency) {
+    if (executing.size >= maxConcurrency) {
       await Promise.race(executing);
-      // Remove completed promises
-      for (let j = executing.length - 1; j >= 0; j--) {
-        if (
-          (await Promise.race([executing[j], Promise.resolve("pending")])) !==
-          "pending"
-        ) {
-          executing.splice(j, 1);
-        }
-      }
     }
   }
 
-  // Wait for all remaining promises to complete
+  // 无条件 drain，确保没有被遗弃的在途 promise
   await Promise.all(executing);
+
+  if (firstError) throw firstError;
 
   return results;
 }
@@ -315,7 +335,17 @@ export async function execute(
 
     if (!Array.isArray(collection)) {
       throw new Error(
-        `Collection expression must return an array, got ${typeof collection}`,
+        `Collection expression must return an array, got ${typeof collection} ` +
+          `(expression: ${evaluatedConfig.collection})`,
+      );
+    }
+
+    // 迭代次数上限：每次迭代都会向 instance.history 追加日志并触发存储写入，
+    // 一个返回百万元素的表达式足以拖垮引擎。在执行任何 body 之前就拒绝。
+    const maxIterations = getMaxLoopIterations();
+    if (collection.length > maxIterations) {
+      throw new Error(
+        `Loop iteration count ${collection.length} exceeds the limit of ${maxIterations}`,
       );
     }
 

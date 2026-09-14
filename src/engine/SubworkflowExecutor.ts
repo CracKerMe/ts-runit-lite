@@ -2,8 +2,14 @@
 import { hookManager } from "../event/HookManager";
 import type { WorkflowInstance } from "../model/Instance";
 import type { TaskNode } from "../model/Workflow";
+import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
 import { getNestedValue } from "./ExpressionEvaluator";
+
+/** 子工作流最大嵌套深度，防止自引用/环形引用无限递归。 */
+function getMaxSubworkflowDepth(): number {
+  return parseEnvInt(process.env.MAX_SUBWORKFLOW_DEPTH, 10, { min: 1 });
+}
 
 /**
  * 子工作流执行结果
@@ -51,6 +57,29 @@ export class SubworkflowExecutor {
     // 添加父实例引用
     subworkflowContext.__parentInstanceId = parentInstance.instanceId;
     subworkflowContext.__parentWorkflowId = parentInstance.workflowId;
+
+    // 深度校验必须在 startWorkflow 之前：自引用的子工作流会一路递归到
+    // maxInstances 才抛错，期间已创建并落盘上万实例。深度随 child 的
+    // context 自然传播，无需额外簿记。
+    const parentDepth =
+      typeof parentInstance.context?.__subworkflowDepth === "number"
+        ? parentInstance.context.__subworkflowDepth
+        : 0;
+    const depth = parentDepth + 1;
+    const maxDepth = getMaxSubworkflowDepth();
+
+    if (depth > maxDepth) {
+      Logger.error(
+        parentInstance.instanceId,
+        node.id,
+        `Subworkflow depth limit exceeded (${maxDepth}) for ${node.subworkflowId} at depth ${depth}`,
+      );
+      throw new Error(
+        `Subworkflow depth limit exceeded (${maxDepth}) at node ${node.id}; ` +
+          `check for a self-referencing or cyclic subworkflow chain`,
+      );
+    }
+    subworkflowContext.__subworkflowDepth = depth;
 
     Logger.info(
       parentInstance.instanceId,

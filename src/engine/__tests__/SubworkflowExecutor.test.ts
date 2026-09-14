@@ -280,4 +280,97 @@ describe("SubworkflowExecutor", () => {
       );
     });
   });
+
+  describe("depth limiting", () => {
+    const node: TaskNode = {
+      id: "subworkflow-node",
+      type: "subworkflow",
+      subworkflowId: "child-workflow",
+      waitForCompletion: false,
+    };
+
+    it("should stamp an incrementing depth onto the child context", async () => {
+      startWorkflow.mockResolvedValue("child-1");
+
+      await executor.execute(node, makeParentInstance());
+      expect(startWorkflow).toHaveBeenCalledWith(
+        "child-workflow",
+        expect.objectContaining({ __subworkflowDepth: 1 }),
+        "parent-instance",
+      );
+
+      await executor.execute(
+        node,
+        makeParentInstance({ context: { __subworkflowDepth: 4 } }),
+      );
+      expect(startWorkflow).toHaveBeenLastCalledWith(
+        "child-workflow",
+        expect.objectContaining({ __subworkflowDepth: 5 }),
+        "parent-instance",
+      );
+    });
+
+    it("should reject beyond the depth limit without starting an instance", async () => {
+      // 回归守卫：此前没有任何深度限制，自引用的子工作流会一路递归到
+      // maxInstances 才抛错，期间已创建并落盘上万实例。
+      const previous = process.env.MAX_SUBWORKFLOW_DEPTH;
+      process.env.MAX_SUBWORKFLOW_DEPTH = "3";
+
+      try {
+        startWorkflow.mockResolvedValue("child-x");
+
+        // depth 3 仍然允许
+        await executor.execute(
+          node,
+          makeParentInstance({ context: { __subworkflowDepth: 2 } }),
+        );
+        expect(startWorkflow).toHaveBeenCalledTimes(1);
+
+        // depth 4 超限：抛错且不得启动子实例
+        startWorkflow.mockClear();
+        await expect(
+          executor.execute(
+            node,
+            makeParentInstance({ context: { __subworkflowDepth: 3 } }),
+          ),
+        ).rejects.toThrow("Subworkflow depth limit exceeded (3)");
+
+        expect(startWorkflow).not.toHaveBeenCalled();
+      } finally {
+        if (previous === undefined) delete process.env.MAX_SUBWORKFLOW_DEPTH;
+        else process.env.MAX_SUBWORKFLOW_DEPTH = previous;
+      }
+    });
+
+    it("should terminate a self-referencing subworkflow chain", async () => {
+      const previous = process.env.MAX_SUBWORKFLOW_DEPTH;
+      process.env.MAX_SUBWORKFLOW_DEPTH = "5";
+
+      try {
+        // 模拟引擎：每次 startWorkflow 都用子 context 再次进入同一节点
+        let started = 0;
+        startWorkflow.mockImplementation(
+          async (_id: string, context: Record<string, any>) => {
+            started++;
+            const child = makeParentInstance({
+              instanceId: `child-${started}`,
+              context,
+            });
+            await executor.execute(node, child);
+            return `child-${started}`;
+          },
+        );
+
+        await expect(
+          executor.execute(node, makeParentInstance()),
+        ).rejects.toThrow("Subworkflow depth limit exceeded (5)");
+
+        // 递归在第 5 层被截断，而不是一路跑到 maxInstances
+        expect(started).toBe(5);
+      } finally {
+        if (previous === undefined) delete process.env.MAX_SUBWORKFLOW_DEPTH;
+        else process.env.MAX_SUBWORKFLOW_DEPTH = previous;
+      }
+    });
+  });
 });
