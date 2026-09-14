@@ -385,16 +385,24 @@ export class ExecutionOrchestrator {
 
                 await this.instanceManager.updateInstance(instance);
 
-                await new Promise<void>((resolveRetry) => {
-                  setTimeout(async () => {
-                    try {
-                      await this.executeNode(instance, workflow, node);
-                      resolveRetry();
-                    } catch (retryError) {
-                      reject(retryError);
-                    }
-                  }, delay);
-                });
+                await new Promise<void>((resolveDelay) =>
+                  setTimeout(resolveDelay, delay),
+                );
+
+                // 必须透传原始的 autoAdvance/nextNodes：批次循环以
+                // autoAdvance:false 调用本节点，若重试退回默认的 true，
+                // onComplete 会递归调用 execute() 推进整个下游图，而外层
+                // 批次循环仍挂起在 await 上——下游节点被执行两次，且实例
+                // 会在下游仍在运行时被提前置为 completed。
+                try {
+                  await this.executeNode(instance, workflow, node, {
+                    autoAdvance,
+                    nextNodes: batchNextNodes,
+                  });
+                  resolve();
+                } catch (retryError) {
+                  reject(retryError);
+                }
                 return;
               }
             }
