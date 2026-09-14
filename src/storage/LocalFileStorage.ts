@@ -362,13 +362,29 @@ export class LocalFileStorage extends MemoryStorage {
     restore: (id: string, value: unknown) => Promise<void>,
   ): Promise<void> {
     for (const id of await this.listFiles(collection)) {
+      // 读取/解析失败才隔离——那是真正损坏的字节。
+      let value: unknown;
       try {
-        const value = JSON.parse(
+        value = JSON.parse(
           await fs.promises.readFile(this.filePath(collection, id), "utf8"),
         );
-        await restore(id, value);
       } catch (error) {
         await this.quarantine(collection, id, error);
+        continue;
+      }
+
+      // restore 回调抛错是**我们的 bug**，不是数据损坏。若一并隔离，
+      // 一条完全合法的记录会被 rename 进 corrupt/ 而永久丢失。
+      // 这里只记录并跳过，文件留在原地等修好的版本读取。
+      try {
+        await restore(id, value);
+      } catch (error) {
+        Logger.error(
+          "system",
+          "storage",
+          `Failed to restore ${collection} record ${id}; leaving the file in place`,
+          error instanceof Error ? error.stack : String(error),
+        );
       }
     }
   }
@@ -433,13 +449,41 @@ export class LocalFileStorage extends MemoryStorage {
     return encodeURIComponent(id);
   }
 
+  /**
+   * decodeURIComponent 对含裸 `%` 的文件名会抛 URIError。该调用发生在
+   * restoreCollection 的 for...of 可迭代表达式里——在任何 per-record
+   * try 之前——一个坏文件名就会让整个 connect() 崩掉。这里单独兜住。
+   */
+  private decodeId(name: string): string | null {
+    try {
+      return decodeURIComponent(name);
+    } catch {
+      return null;
+    }
+  }
+
   private async listFiles(collection: Collection): Promise<string[]> {
     const entries = await fs.promises.readdir(this.directories[collection], {
       withFileTypes: true,
     });
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-      .map((entry) => decodeURIComponent(entry.name.slice(0, -5)));
+
+    const ids: string[] = [];
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".json")) continue;
+
+      const id = this.decodeId(entry.name.slice(0, -5));
+      if (id === null) {
+        Logger.warn(
+          "system",
+          "storage",
+          `Skipping ${collection} file with an undecodable name`,
+          { fileName: entry.name },
+        );
+        continue;
+      }
+      ids.push(id);
+    }
+    return ids;
   }
 
   private async quarantine(
