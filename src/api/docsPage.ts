@@ -30,11 +30,13 @@ const FN_GROUPS: FnGroup[] = [
   { category: "数学", items: "abs, ceil, floor, round, min, max, sqrt, pow" },
   {
     category: "字符串（内置）",
-    items: "length, substring, toLowerCase, toUpperCase, trim, concat, includes, startsWith, endsWith",
+    items:
+      "length, substring, toLowerCase, toUpperCase, trim, concat, includes, startsWith, endsWith",
   },
   {
     category: "字符串（函数库）",
-    items: "uuid, base64Encode, base64Decode, sha256, md5, slugify, truncate, padStart, padEnd, replaceAll, split",
+    items:
+      "uuid, base64Encode, base64Decode, sha256, md5, slugify, truncate, padStart, padEnd, replaceAll, split",
   },
   {
     category: "日期（内置）",
@@ -42,7 +44,8 @@ const FN_GROUPS: FnGroup[] = [
   },
   {
     category: "日期（函数库）",
-    items: "formatDate, dateDiff, addMinutes, startOfDay, endOfDay, isBefore, isAfter",
+    items:
+      "formatDate, dateDiff, addMinutes, startOfDay, endOfDay, isBefore, isAfter",
   },
   {
     category: "数组（内置）",
@@ -50,11 +53,13 @@ const FN_GROUPS: FnGroup[] = [
   },
   {
     category: "集合（函数库）",
-    items: "flatten, unique, chunk, groupBy, sortBy, pick, omit, first, last, size, sum, avg, keys, values",
+    items:
+      "flatten, unique, chunk, groupBy, sortBy, pick, omit, first, last, size, sum, avg, keys, values",
   },
   {
     category: "类型转换",
-    items: "toNumber, toString, toBoolean, toJson, fromJson, typeOf, isEmpty, defaultTo",
+    items:
+      "toNumber, toString, toBoolean, toJson, fromJson, typeOf, isEmpty, defaultTo",
   },
 ];
 
@@ -72,7 +77,8 @@ export function generateConceptsDocHtml(port: number): string {
   ).join("\n");
 
   const fnRows = FN_GROUPS.map(
-    (g) => `<tr><td>${escapeHtml(g.category)}</td><td><code>${escapeHtml(g.items)}</code></td></tr>`,
+    (g) =>
+      `<tr><td>${escapeHtml(g.category)}</td><td><code>${escapeHtml(g.items)}</code></td></tr>`,
   ).join("\n");
 
   return `<!DOCTYPE html>

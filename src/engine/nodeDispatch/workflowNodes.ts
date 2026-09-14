@@ -34,9 +34,7 @@ export async function dispatchWorkflowNode(
       instance,
       node.id,
     );
-    const nextNodes = result.nextNode
-      ? [result.nextNode]
-      : node.next || [];
+    const nextNodes = result.nextNode ? [result.nextNode] : node.next || [];
 
     await completeStandardNode({
       node,

@@ -32,14 +32,38 @@ interface EndpointInfo {
 
 const ENDPOINTS: EndpointInfo[] = [
   { method: "GET", path: "/workflow-api/v1/health", desc: "健康检查" },
-  { method: "GET", path: "/workflow-api/v1/workflows", desc: "查询工作流定义列表" },
-  { method: "POST", path: "/workflow-api/v1/workflows", desc: "注册新的工作流定义" },
-  { method: "POST", path: "/workflow-api/v1/instances", desc: "启动一个工作流实例" },
-  { method: "GET", path: "/workflow-api/v1/instances/:id", desc: "查询实例状态" },
-  { method: "POST", path: "/workflow-api/v1/instances/:id/signal", desc: "向运行中实例发送 Signal" },
+  {
+    method: "GET",
+    path: "/workflow-api/v1/workflows",
+    desc: "查询工作流定义列表",
+  },
+  {
+    method: "POST",
+    path: "/workflow-api/v1/workflows",
+    desc: "注册新的工作流定义",
+  },
+  {
+    method: "POST",
+    path: "/workflow-api/v1/instances",
+    desc: "启动一个工作流实例",
+  },
+  {
+    method: "GET",
+    path: "/workflow-api/v1/instances/:id",
+    desc: "查询实例状态",
+  },
+  {
+    method: "POST",
+    path: "/workflow-api/v1/instances/:id/signal",
+    desc: "向运行中实例发送 Signal",
+  },
   { method: "GET", path: "/workflow-api/v1/events", desc: "触发/查询事件" },
   { method: "GET", path: "/workflow-api/v1/templates", desc: "查询节点模板" },
-  { method: "GET", path: "/workflow-api/v1/analytics", desc: "查询运行分析指标" },
+  {
+    method: "GET",
+    path: "/workflow-api/v1/analytics",
+    desc: "查询运行分析指标",
+  },
   { method: "GET", path: "/workflow-api/v1/dlq", desc: "查询死信队列" },
 ];
 

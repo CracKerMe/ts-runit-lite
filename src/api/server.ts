@@ -472,11 +472,7 @@ export async function startApiServer(
     // 启动服务器
     const server: Server = app.listen(port, () => {
       Logger.info("system", "api", `API Server running on port ${port}`);
-      Logger.info(
-        "system",
-        "api",
-        `Welcome page: http://localhost:${port}/`,
-      );
+      Logger.info("system", "api", `Welcome page: http://localhost:${port}/`);
       Logger.info(
         "system",
         "api",
