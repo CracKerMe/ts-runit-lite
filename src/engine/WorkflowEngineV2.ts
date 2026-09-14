@@ -95,6 +95,15 @@ export class WorkflowEngineV2 {
     this.eventCoordinator = new EventCoordinator(eventBus, storage);
     this.leaseStore = createLeaseStore();
     this.heartbeatManager = new HeartbeatManager(storage, this.leaseHolderId);
+    // 从存储恢复的心跳没有可序列化的 onTimeout 回调，注入引擎级兜底，
+    // 否则重启后超时只会静默清理定时器，卡住的节点永远不会被判失败。
+    this.heartbeatManager.setDefaultOnTimeout((instanceId, nodeId) => {
+      Logger.error(
+        instanceId,
+        nodeId,
+        "Restored heartbeat timed out; node is no longer reporting progress",
+      );
+    });
     // min:1000 —— NaN 或极小值都会让 Math.max(1000, ttl/2) 退化，
     // setInterval(fn, NaN) 被 Node 强制为 1ms，续约定时器每毫秒触发。
     this.instanceLeaseTtlMs = parseEnvInt(

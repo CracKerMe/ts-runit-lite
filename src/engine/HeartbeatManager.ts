@@ -27,6 +27,17 @@ export class HeartbeatManager {
   private heartbeatStates: Map<string, HeartbeatState> = new Map();
   private heartbeatOptions: Map<string, HeartbeatOptions> = new Map();
 
+  /**
+   * 恢复场景下的兜底超时处理器。
+   *
+   * `heartbeatOptions` 里的回调是闭包，无法序列化，所以只有
+   * `heartbeatStates` 被持久化。进程重启后 `heartbeatOptions` 是空的，
+   * 恢复出来的心跳就没有 onTimeout——超时定时器照常触发却什么也不做，
+   * 卡住的节点永远不会被判失败。引擎在构造时注入这个兜底处理器，
+   * 让心跳机制在最需要它的时刻（重启后）仍然有效。
+   */
+  private defaultOnTimeout?: (instanceId: string, nodeId: string) => void;
+
   constructor(
     private storage?: StorageProvider,
     private workerId?: string,
@@ -37,7 +48,23 @@ export class HeartbeatManager {
     this.workerId = workerId;
   }
 
-  async start(options: HeartbeatOptions, timeoutMs?: number): Promise<string> {
+  /** 设置恢复场景下的兜底超时处理器。 */
+  setDefaultOnTimeout(
+    handler: (instanceId: string, nodeId: string) => void,
+  ): void {
+    this.defaultOnTimeout = handler;
+  }
+
+  /**
+   * @param deadline 从存储恢复时传入原有的 deadline。省略则按
+   *   `now + timeoutMs` 重新计算——恢复场景下那会把一个已过去 29s 的
+   *   30s 超时窗口重置为完整的 30s，等于丢掉了超时进度。
+   */
+  async start(
+    options: HeartbeatOptions,
+    timeoutMs?: number,
+    deadline?: number,
+  ): Promise<string> {
     const key = this.getKey(options.instanceId, options.nodeId);
     const isRestart = this.timers.has(key);
     if (isRestart) {
@@ -45,14 +72,15 @@ export class HeartbeatManager {
     }
 
     // Store heartbeat state for recovery
+    const effectiveTimeoutMs = timeoutMs || options.interval * 3;
     const state: HeartbeatState = {
       instanceId: options.instanceId,
       nodeId: options.nodeId,
       heartbeatKey: key,
       workerId: this.workerId,
       lastBeat: Date.now(),
-      timeoutMs: timeoutMs || options.interval * 3,
-      deadline: Date.now() + (timeoutMs || options.interval * 3),
+      timeoutMs: effectiveTimeoutMs,
+      deadline: deadline ?? Date.now() + effectiveTimeoutMs,
       createdAt: Date.now(),
     };
 
@@ -79,32 +107,40 @@ export class HeartbeatManager {
         clearTimeout(existingTimeout);
       }
 
-      const timeoutTimer = setTimeout(() => {
-        const activeState = this.heartbeatStates.get(key);
-        if (!activeState) {
-          return;
-        }
-
-        if (Date.now() < activeState.deadline) {
-          scheduleTimeoutCheck();
-          return;
-        }
-
-        this.stop(options.instanceId, options.nodeId);
-
-        if (options.onTimeout) {
-          try {
-            options.onTimeout();
-          } catch (error) {
-            Logger.error(
-              options.instanceId,
-              options.nodeId,
-              "Heartbeat timeout callback error",
-              error instanceof Error ? error.stack : String(error),
-            );
+      const timeoutTimer = setTimeout(
+        () => {
+          const activeState = this.heartbeatStates.get(key);
+          if (!activeState) {
+            return;
           }
-        }
-      }, state.timeoutMs);
+
+          if (Date.now() < activeState.deadline) {
+            scheduleTimeoutCheck();
+            return;
+          }
+
+          this.stop(options.instanceId, options.nodeId);
+
+          if (options.onTimeout) {
+            try {
+              options.onTimeout();
+            } catch (error) {
+              Logger.error(
+                options.instanceId,
+                options.nodeId,
+                "Heartbeat timeout callback error",
+                error instanceof Error ? error.stack : String(error),
+              );
+            }
+          }
+          // 按距离 deadline 的剩余时间布防，而不是完整的 timeoutMs：
+          // 从存储恢复时 deadline 可能已经过去大半。
+        },
+        Math.max(
+          0,
+          (this.heartbeatStates.get(key)?.deadline ?? 0) - Date.now(),
+        ),
+      );
 
       this.timeoutTimers.set(key, timeoutTimer);
     };
@@ -201,6 +237,8 @@ export class HeartbeatManager {
     this.timers.clear();
     this.timeoutTimers.clear();
     this.heartbeatStates.clear();
+    // heartbeatOptions 此前被漏掉，会随进程生命周期无限增长
+    this.heartbeatOptions.clear();
     Logger.debug("system", "heartbeat", "All heartbeats stopped");
   }
 
@@ -224,16 +262,24 @@ export class HeartbeatManager {
         if (hb.deadline > Date.now()) {
           this.heartbeatStates.set(hb.heartbeatKey, hb);
 
-          // Restart monitoring
+          // Restart monitoring.
+          // 进程重启后 heartbeatOptions 必然为空（回调不可序列化），
+          // 所以这里的 spread 通常只提供 instanceId/nodeId/interval。
           const options: HeartbeatOptions = {
-            ...(this.heartbeatOptions.get(hb.heartbeatKey) ?? {
-              instanceId: hb.instanceId,
-              nodeId: hb.nodeId,
-              interval: Math.max(hb.timeoutMs / 3, 1000),
-            }),
+            instanceId: hb.instanceId,
+            nodeId: hb.nodeId,
+            interval: Math.max(hb.timeoutMs / 3, 1000),
+            ...this.heartbeatOptions.get(hb.heartbeatKey),
           };
 
-          await this.start(options, hb.timeoutMs);
+          if (!options.onTimeout && this.defaultOnTimeout) {
+            options.onTimeout = () => {
+              this.defaultOnTimeout?.(hb.instanceId, hb.nodeId);
+            };
+          }
+
+          // 传入持久化的 deadline，保留超时进度
+          await this.start(options, hb.timeoutMs, hb.deadline);
 
           Logger.info(
             hb.instanceId,

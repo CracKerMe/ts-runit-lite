@@ -170,4 +170,124 @@ describe("HeartbeatManager - Persistence", () => {
       expect(manager.isActive("wf-timeout", "node-timeout")).toBe(false);
     });
   });
+
+  describe("restore across a process restart", () => {
+    /** 全新的 manager：heartbeatOptions 为空，模拟进程重启后的状态。 */
+    function freshManager(persisted: HeartbeatState[]) {
+      const mockStorage = {
+        saveHeartbeat: vi.fn().mockResolvedValue(undefined),
+        loadAllHeartbeats: vi.fn().mockResolvedValue(persisted),
+        deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
+      };
+      return {
+        manager: new HeartbeatManager(mockStorage as any),
+        mockStorage,
+      };
+    }
+
+    function persistedState(
+      overrides: Partial<HeartbeatState> = {},
+    ): HeartbeatState {
+      const now = Date.now();
+      return {
+        instanceId: "wf-restored",
+        nodeId: "node-restored",
+        heartbeatKey: "wf-restored:node-restored",
+        lastBeat: now,
+        timeoutMs: 30_000,
+        deadline: now + 5000,
+        createdAt: now,
+        ...overrides,
+      };
+    }
+
+    it("should fire the default onTimeout for a heartbeat restored after restart", async () => {
+      // 回归守卫：heartbeatOptions 从不持久化，重启后恢复出的心跳没有
+      // onTimeout，超时定时器触发后什么也不做——卡住的节点永远不被判失败。
+      vi.useFakeTimers();
+      const { manager } = freshManager([persistedState()]);
+
+      const defaultOnTimeout = vi.fn();
+      manager.setDefaultOnTimeout(defaultOnTimeout);
+
+      await manager.restoreHeartbeats();
+
+      // deadline 在 5s 后：4s 时不应触发
+      await vi.advanceTimersByTimeAsync(4000);
+      expect(defaultOnTimeout).not.toHaveBeenCalled();
+
+      // 越过 deadline 后必须触发
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(defaultOnTimeout).toHaveBeenCalledTimes(1);
+      expect(defaultOnTimeout).toHaveBeenCalledWith(
+        "wf-restored",
+        "node-restored",
+      );
+
+      manager.stopAll();
+    });
+
+    it("should honour the persisted deadline instead of restarting the window", async () => {
+      // 回归守卫：start() 用 Date.now() + timeoutMs 重算 deadline，
+      // 把一个 30s 窗口里已过 29s 的心跳重置成完整 30s。
+      vi.useFakeTimers();
+      const { manager } = freshManager([
+        persistedState({ timeoutMs: 30_000, deadline: Date.now() + 1000 }),
+      ]);
+
+      const defaultOnTimeout = vi.fn();
+      manager.setDefaultOnTimeout(defaultOnTimeout);
+      await manager.restoreHeartbeats();
+
+      // 剩余 1s —— 2s 后必须已经触发，而不是等满 30s
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(defaultOnTimeout).toHaveBeenCalledTimes(1);
+
+      manager.stopAll();
+    });
+
+    it("should prefer an explicitly registered onTimeout over the default", async () => {
+      vi.useFakeTimers();
+      const { manager } = freshManager([persistedState()]);
+
+      const explicit = vi.fn();
+      const fallback = vi.fn();
+      manager.setDefaultOnTimeout(fallback);
+
+      // 同进程内已注册过回调（heartbeatOptions 中有记录），
+      // 恢复时必须沿用它而不是替换成兜底处理器。
+      await manager.start(
+        {
+          instanceId: "wf-restored",
+          nodeId: "node-restored",
+          interval: 10_000,
+          onTimeout: explicit,
+        },
+        30_000,
+      );
+      await manager.restoreHeartbeats();
+
+      const restoredOptions = (manager as any).heartbeatOptions.get(
+        "wf-restored:node-restored",
+      );
+      expect(restoredOptions.onTimeout).toBe(explicit);
+      expect(fallback).not.toHaveBeenCalled();
+
+      manager.stopAll();
+    });
+
+    it("should clear heartbeatOptions on stopAll", async () => {
+      const { manager } = freshManager([]);
+
+      await manager.start({
+        instanceId: "wf-leak",
+        nodeId: "node-leak",
+        interval: 5000,
+      });
+
+      manager.stopAll();
+
+      expect((manager as any).heartbeatOptions.size).toBe(0);
+    });
+  });
 });
