@@ -55,6 +55,7 @@ export class EventDeduplicator {
     this.cleanupInterval = setInterval(() => {
       this.cleanup();
     }, 3600000);
+    this.cleanupInterval.unref?.();
   }
 
   /**

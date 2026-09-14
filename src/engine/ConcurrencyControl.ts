@@ -43,6 +43,8 @@ export class ConcurrencyControl {
 
     // 定期清理过期锁
     this.cleanupInterval = setInterval(() => this.cleanupExpiredLocks(), 10000);
+    // unref：清理定时器不应阻止进程退出（否则 destroy() 后进程挂住）
+    this.cleanupInterval.unref?.();
   }
 
   /**
@@ -320,6 +322,17 @@ export function getConcurrencyControl(): ConcurrencyControl {
     }
   }
   return concurrencyControlInstance;
+}
+
+/**
+ * 销毁全局并发控制器并清空单例。
+ *
+ * 该单例此前从不销毁，其 10 秒清理定时器会一直把进程钉住——
+ * WorkflowEngineV2.destroy() 也没有触及它。
+ */
+export function destroyConcurrencyControl(): void {
+  concurrencyControlInstance?.destroy();
+  concurrencyControlInstance = null;
 }
 
 export function setConcurrencyControl(control: ConcurrencyControl): void {

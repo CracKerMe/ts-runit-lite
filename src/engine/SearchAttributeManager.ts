@@ -112,42 +112,60 @@ export class SearchAttributeManager {
     return Object.fromEntries(entry.attributes);
   }
 
-  query(query: SearchQuery): string[] {
-    let results = Array.from(this.indexes.values());
-
-    if (query.workflowId) {
-      results = results.filter(
-        (entry) => entry.workflowId === query.workflowId,
-      );
+  /**
+   * 判断一条索引是否匹配查询条件。
+   *
+   * 抽成单独的谓词，让 query/count 都能单遍扫描，避免此前
+   * `Array.from()` + 三次链式 filter 每步都分配一个新数组。
+   */
+  private matches(entry: IndexEntry, query: SearchQuery): boolean {
+    if (query.workflowId && entry.workflowId !== query.workflowId) {
+      return false;
     }
 
     if (query.status && query.status.length > 0) {
-      results = results.filter(
-        (entry) =>
-          entry.status !== undefined && query.status!.includes(entry.status),
-      );
+      if (entry.status === undefined || !query.status.includes(entry.status)) {
+        return false;
+      }
     }
 
     if (query.attributes) {
-      results = results.filter((entry) => {
-        for (const [key, value] of Object.entries(query.attributes!)) {
-          if (entry.attributes.get(key) !== value) {
-            return false;
-          }
-        }
-        return true;
-      });
+      for (const [key, value] of Object.entries(query.attributes)) {
+        if (entry.attributes.get(key) !== value) return false;
+      }
     }
 
+    return true;
+  }
+
+  query(query: SearchQuery): string[] {
     const offset = query.offset ?? 0;
     const limit = query.limit ?? 100;
-    return results
-      .slice(offset, offset + limit)
-      .map((entry) => entry.instanceId);
+
+    // 单遍扫描，只收集窗口内的条目：不再为中间结果分配数组。
+    const results: string[] = [];
+    let seen = 0;
+
+    for (const entry of this.indexes.values()) {
+      if (!this.matches(entry, query)) continue;
+
+      if (seen++ < offset) continue;
+      results.push(entry.instanceId);
+      if (results.length >= limit) break;
+    }
+
+    return results;
   }
 
   count(query: SearchQuery): number {
-    return this.query({ ...query, limit: 10000 }).length;
+    // 此前实现是 `this.query({ ...query, limit: 10000 }).length`：
+    // 超过一万条时返回的是被截断的 10000（错误的数字），而且还会把
+    // 原查询的 offset 一并算进去。这里单遍计数，不设上限也不分页。
+    let total = 0;
+    for (const entry of this.indexes.values()) {
+      if (this.matches(entry, query)) total++;
+    }
+    return total;
   }
 
   private normalizeValue(

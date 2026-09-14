@@ -20,6 +20,7 @@ import type {
 import { createLeaseStore, type LeaseStore } from "../utils/LeaseStore";
 import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
+import { destroyConcurrencyControl } from "./ConcurrencyControl";
 import {
   CanaryReleaseManager,
   type CanaryStatus,
@@ -662,6 +663,9 @@ export class WorkflowEngineV2 {
     this.canaryReleaseManager.stopEvaluationLoop();
     this.lifecycleManager.destroy();
     this.eventCoordinator.destroy();
+    this.heartbeatManager.stopAll();
+    // 全局并发控制器的清理定时器此前无人负责，destroy() 后进程仍被钉住
+    destroyConcurrencyControl();
     Logger.info("system", "engine", "WorkflowEngineV2 destroyed");
   }
 

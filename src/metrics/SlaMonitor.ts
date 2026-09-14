@@ -75,6 +75,7 @@ export class SlaMonitor extends EventEmitter {
         );
       });
     }, 60000);
+    this.checkInterval.unref?.();
 
     Logger.info("system", "sla-monitor", "SLA monitor started");
   }

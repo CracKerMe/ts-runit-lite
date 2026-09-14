@@ -5,9 +5,8 @@ import { getMetrics, recordApiRequest } from "../index";
 function seriesCount(output: string, metricName: string): number {
   return output
     .split("\n")
-    .filter(
-      (line) => line.startsWith(`${metricName}{`) || line === metricName,
-    ).length;
+    .filter((line) => line.startsWith(`${metricName}{`) || line === metricName)
+    .length;
 }
 
 describe("metrics – label cardinality", () => {
@@ -38,16 +37,18 @@ describe("metrics – label cardinality", () => {
   it("keeps counting requests after the cap is reached", () => {
     // 溢出不能丢计数——counter 的总量仍要单调递增
     const before = getMetrics();
-    const beforeTotal = [...before.matchAll(/workflow_api_requests_total\{[^}]*\}\s+(\d+)/g)]
-      .reduce((sum, m) => sum + Number(m[1]), 0);
+    const beforeTotal = [
+      ...before.matchAll(/workflow_api_requests_total\{[^}]*\}\s+(\d+)/g),
+    ].reduce((sum, m) => sum + Number(m[1]), 0);
 
     for (let i = 0; i < 50; i++) {
       recordApiRequest("GET", `/post-cap-${i}`, 404, 0.01);
     }
 
     const after = getMetrics();
-    const afterTotal = [...after.matchAll(/workflow_api_requests_total\{[^}]*\}\s+(\d+)/g)]
-      .reduce((sum, m) => sum + Number(m[1]), 0);
+    const afterTotal = [
+      ...after.matchAll(/workflow_api_requests_total\{[^}]*\}\s+(\d+)/g),
+    ].reduce((sum, m) => sum + Number(m[1]), 0);
 
     expect(afterTotal).toBe(beforeTotal + 50);
   });

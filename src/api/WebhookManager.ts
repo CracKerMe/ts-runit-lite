@@ -250,6 +250,7 @@ export class WebhookManager {
     this.cleanupTimer = setInterval(() => {
       void this.runScheduledCleanup();
     }, this.CLEANUP_INTERVAL_MS);
+    this.cleanupTimer.unref?.();
 
     Logger.info(
       "webhook",

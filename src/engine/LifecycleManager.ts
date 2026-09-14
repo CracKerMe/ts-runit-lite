@@ -47,6 +47,7 @@ export class LifecycleManager {
       this.cleanupStaleInstances(getInstances());
       this.cleanupStorageResources();
     }, this.config.cleanupIntervalMs);
+    this.cleanupInterval.unref?.();
 
     Logger.debug(
       "system",
