@@ -97,6 +97,11 @@ export {
 } from "./templates/index";
 export {
   type MockNodeHandler,
+  type Mutation,
+  type MutationReport,
+  type MutationResult,
+  MutationTester,
+  type MutationType,
   type TestWorkflowInput,
   type TestWorkflowOptions,
   type TestWorkflowResult,
@@ -105,6 +110,34 @@ export {
   type WorkflowFailureSnapshot,
 } from "./testing/index";
 export { Logger, type LogLevel } from "./utils/Logger";
+export {
+  AwsSecretsManagerProvider,
+  EnvSecretProvider,
+  SecretManager,
+  type SecretProvider,
+  UnsupportedSecretProviderError,
+  VaultSecretProvider,
+} from "./utils/SecretManager";
+export {
+  disposeSecretManager,
+  getSecretManager,
+  resolveSecrets,
+  setSecretManager,
+} from "./utils/secrets";
+export {
+  StickyExecutionManager,
+  stickyExecutionManager,
+  type StickyOptions,
+  type StickyWorker,
+} from "./engine/StickyExecutionManager";
+export {
+  type Task,
+  type TaskHandler,
+  TaskQueueManager,
+  taskQueueManager,
+  type TaskQueueOptions,
+  type TaskQueueType,
+} from "./engine/TaskQueueManager";
 export {
   LocalFileStorage,
   MemoryStorage,

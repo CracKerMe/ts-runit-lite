@@ -56,6 +56,11 @@ export interface TaskNode {
   output?: unknown;
   /** 节点特定配置 config （如 http, sql, queue, condition, router, loop, llm, ai_router） */
   config?: Record<string, unknown>;
+  /**
+   * 将该节点的执行路由到指定的命名任务队列（见 TaskQueueManager）。
+   * 仅对 action / rollback 节点生效；未注册 worker 的队列会回退为本地直接执行。
+   */
+  taskQueue?: string;
   /** 节点输入 Schema（JSON Schema 子集，见 DataValidator） */
   inputSchema?: Record<string, unknown>;
   /** 节点输出 Schema（JSON Schema 子集，见 DataValidator） */

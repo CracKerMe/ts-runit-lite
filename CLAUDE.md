@@ -8,7 +8,7 @@
 **版本**: 2.1.0（2026 年 7 月）  
 **类型**: 轻量级 TypeScript 工作流引擎（ts-runit 的功能精简 fork）  
 **语言**: TypeScript + Express v5  
-**包管理**: pnpm  
+**包管理**: pnpm
 
 ## 项目目标
 
@@ -295,7 +295,31 @@ export interface WorkflowDefinition {
 - 包含 JavaScript 函数或闭包的工作流定义不能序列化；启动时应先关闭自动恢复，重新注册定义，再调用 `engine.resumeRunningInstancesFromStorage()`
 - 本地文件存储不提供跨进程锁，同一个 `STORAGE_DIR` 只能由一个引擎进程使用
 
-### 7. 终态实例归档
+### 7. 密钥解析（SecretManager）
+
+- 节点配置中可写 `${secret:NAME}`，在 `http` / `sql` / `queue` 节点执行前解析（含嵌套字段）
+- 由 `SECRET_PROVIDER` 选择后端，默认 `env`（从环境变量读取）
+- `vault` / `aws-secrets-manager` 尚未实现，配置后在启动时抛 `UnsupportedSecretProviderError`，不会静默回退
+- 未找到的密钥保留原样并记录 warn，不会替换成 `undefined`
+- 实现见 `src/utils/SecretManager.ts` 与 `src/utils/secrets.ts`
+
+### 8. Worker 线程池与 Sticky 亲和性
+
+- `WORKER_POOL_ENABLED=true` 时，`http` 节点卸载到 worker 线程执行
+- 每个 worker 有稳定 `workerId`；同一实例的后续任务优先路由回已绑定的 worker（`WORKER_STICKY_ENABLED`）
+- 绑定的 worker 忙碌时回退到任意空闲 worker——亲和性只做优化，不会阻塞任务
+- worker 退出或池关闭时释放绑定，避免实例被绑死在已终止的线程上
+- 实现见 `src/engine/worker/WorkerPool.ts` 与 `src/engine/StickyExecutionManager.ts`
+
+### 9. 任务队列路由（TaskQueueManager）
+
+- action / rollback 节点可通过 `taskQueue: "queue-name"` 路由到命名队列
+- 队列 worker 通过 `taskQueueManager.registerWorker()` 注册，受 `maxConcurrent` 限流
+- 队列无 worker 时回退为本地直接执行，节点不会被卡住
+- 与 `queue` 节点类型不同：后者对接外部消息中间件，前者是进程内的工作分发
+- 实现见 `src/engine/TaskQueueManager.ts`
+
+### 10. 终态实例归档
 
 - 归档默认关闭，通过 `ARCHIVE_ENABLED=true` 启用
 - 终态实例写入 `archive/YYYY-MM-DD/<instanceId>.json` 后，才从热存储移除

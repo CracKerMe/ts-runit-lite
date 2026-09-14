@@ -10,12 +10,15 @@ import {
   setContainer,
 } from "./container";
 import { configureHeartbeatManager } from "./engine/HeartbeatManager";
+import { stickyExecutionManager } from "./engine/StickyExecutionManager";
 import { initWorkerPool, shutdownWorkerPool } from "./engine/TaskExecutor";
 import { WorkflowEngineV2 } from "./engine/WorkflowEngineV2";
 import { setShutdownInstance, setupGracefulShutdown } from "./lifecycle";
 import { setupNotificationChannelsFromEnv } from "./notification/index";
 import { ArchiveManager } from "./storage/ArchiveManager";
 import { Logger, type LogLevel } from "./utils/Logger";
+import { disposeSecretManager, setSecretManager } from "./utils/secrets";
+import { SecretManager } from "./utils/SecretManager";
 
 /**
  * 应用启动选项
@@ -75,6 +78,11 @@ export async function bootstrap(
   configureHeartbeatManager(container.storage);
   setupNotificationChannelsFromEnv();
 
+  // Install the secret manager used to resolve ${secret:name} in node configs.
+  // Unsupported providers throw here rather than silently falling back to env,
+  // so a production misconfiguration fails at startup instead of at node run time.
+  setSecretManager(SecretManager.createFor(config.secretProvider));
+
   const enableArchiving = options.enableArchiving ?? config.archive.enabled;
   if (enableArchiving) {
     const archiveManager = new ArchiveManager(
@@ -91,6 +99,11 @@ export async function bootstrap(
   }
 
   if (config.workerPool.enabled) {
+    stickyExecutionManager.setOptions({
+      enabled: config.workerPool.stickyEnabled,
+      cacheSize: config.workerPool.stickyCacheSize,
+      ttlMs: config.workerPool.stickyTtlMs,
+    });
     initWorkerPool({
       minWorkers: config.workerPool.minWorkers,
       maxWorkers: config.workerPool.maxWorkers,
@@ -134,6 +147,10 @@ export async function bootstrap(
       async () => {
         Logger.info("system", "shutdown", "Stopping scheduler...");
         container.scheduler.stopAll();
+      },
+      async () => {
+        Logger.info("system", "shutdown", "Disposing secret manager...");
+        disposeSecretManager();
       },
       async () => {
         Logger.info("system", "shutdown", "Destroying container...");

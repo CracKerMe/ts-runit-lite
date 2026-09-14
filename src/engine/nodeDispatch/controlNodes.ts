@@ -12,6 +12,7 @@ import {
   RouterNodeExecutor,
 } from "../executors/RouterNodeExecutor";
 import { HeartbeatManager } from "../HeartbeatManager";
+import { taskQueueManager } from "../TaskQueueManager";
 import {
   completeStandardNode,
   handleRouting,
@@ -143,7 +144,17 @@ export async function dispatchControlNode(
     }
 
     try {
-      const result = await actionFn(instance);
+      // A node bound to a task queue runs on that queue's registered workers,
+      // which apply their own concurrency limits. With no worker registered the
+      // task would never be picked up, so fall back to local execution.
+      const result =
+        node.taskQueue && taskQueueManager.hasWorkerFor(node.taskQueue)
+          ? await taskQueueManager.submit(
+              node.taskQueue,
+              { nodeId: node.id, instance },
+              instance.instanceId,
+            )
+          : await actionFn(instance);
 
       await completeStandardNode({
         node,
@@ -208,22 +219,24 @@ export async function dispatchControlNode(
       // Record completion metrics for wait node
       if (storage) {
         try {
-          storage.updateNodeMetrics(instance.instanceId, node.id, {
-            nodeId: node.id,
-            nodeType: node.type,
-            startTime,
-            endTime,
-            duration,
-            status: "completed",
-            retryCount: instance.retries?.[node.id] || 0,
-          }).catch((error: any) => {
-            Logger.error(
-              instance.instanceId,
-              node.id,
-              "Failed to record wait completion metrics",
-              error?.stack,
-            );
-          });
+          storage
+            .updateNodeMetrics(instance.instanceId, node.id, {
+              nodeId: node.id,
+              nodeType: node.type,
+              startTime,
+              endTime,
+              duration,
+              status: "completed",
+              retryCount: instance.retries?.[node.id] || 0,
+            })
+            .catch((error: any) => {
+              Logger.error(
+                instance.instanceId,
+                node.id,
+                "Failed to record wait completion metrics",
+                error?.stack,
+              );
+            });
         } catch (error: any) {
           Logger.error(
             instance.instanceId,

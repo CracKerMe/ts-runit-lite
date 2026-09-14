@@ -84,6 +84,17 @@ export class StickyExecutionManager {
     return true;
   }
 
+  /**
+   * Return the worker an instance is currently bound to, if any.
+   * Used by the worker pool to route follow-up tasks back to the same worker.
+   */
+  getAssignedWorker(instanceId: string): string | undefined {
+    if (!this.options.enabled) {
+      return undefined;
+    }
+    return this.instanceWorkerMap.get(instanceId);
+  }
+
   getWorkerCache(
     workflowId: string,
     instanceId: string,
@@ -148,6 +159,43 @@ export class StickyExecutionManager {
       "sticky",
       `Cache cleared for instance ${instanceId}`,
     );
+  }
+
+  /**
+   * Drop every binding and cache entry for a worker that no longer exists.
+   * Instances bound to it become unbound and are free to land anywhere.
+   */
+  releaseWorker(workerId: string): void {
+    // Collect before deleting: mutating a Map while iterating it is unsafe.
+    const staleKeys: string[] = [];
+    for (const [key, worker] of this.stickyWorkers.entries()) {
+      if (worker.workerId === workerId) {
+        worker.cache.clear();
+        staleKeys.push(key);
+      }
+    }
+    for (const key of staleKeys) {
+      this.stickyWorkers.delete(key);
+    }
+
+    const staleInstances: string[] = [];
+    for (const [instanceId, assigned] of this.instanceWorkerMap.entries()) {
+      if (assigned === workerId) {
+        staleInstances.push(instanceId);
+      }
+    }
+    for (const instanceId of staleInstances) {
+      this.instanceWorkerMap.delete(instanceId);
+    }
+    const released = staleInstances.length;
+
+    if (released > 0) {
+      Logger.debug(
+        "system",
+        "sticky",
+        `Released ${released} instance(s) from worker ${workerId}`,
+      );
+    }
   }
 
   unassignWorker(instanceId: string): void {

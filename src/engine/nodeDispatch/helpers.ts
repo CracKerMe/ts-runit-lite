@@ -240,9 +240,16 @@ export function requireNodeConfig<T>(
   throw new Error(`${label} node missing config`);
 }
 
+/**
+ * Execute a node on the worker pool.
+ *
+ * `config` lets the caller pass a pre-processed configuration (for example one
+ * with `${secret:name}` already resolved); it falls back to the raw node config.
+ */
 export async function executeInWorker(
   node: TaskNode,
   instance: WorkflowInstance,
+  config: unknown = node.config,
 ): Promise<unknown> {
   if (!workerPool) {
     throw new Error("Worker pool is not initialized");
@@ -253,7 +260,7 @@ export async function executeInWorker(
     taskId: `${instance.instanceId}-${node.id}-${Date.now()}`,
     payload: {
       nodeType: node.type,
-      config: node.config,
+      config,
       instanceId: instance.instanceId,
       workflowId: instance.workflowId,
       nodeId: node.id,

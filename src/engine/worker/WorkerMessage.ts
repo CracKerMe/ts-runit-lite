@@ -29,6 +29,8 @@ export interface TaskResultMessage extends WorkerMessage {
   payload: {
     output: unknown;
     duration: number;
+    /** Worker that ran the task; present when sticky affinity is in play. */
+    workerId?: string;
   };
 }
 

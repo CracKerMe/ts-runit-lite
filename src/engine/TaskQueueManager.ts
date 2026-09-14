@@ -19,12 +19,24 @@ export interface Task<T = unknown> {
   priority?: number;
 }
 
+/**
+ * Worker callback. A returned value settles the corresponding `submit()` call;
+ * fire-and-forget `enqueue()` workers may keep returning void.
+ */
+export type TaskHandler = (task: Task) => Promise<unknown>;
+
 interface WorkerRegistration {
   workerId: string;
   queueNames: string[];
-  callback: (task: Task) => Promise<void>;
+  callback: TaskHandler;
   maxConcurrent: number;
   activeCount: number;
+}
+
+/** Settlement handlers for tasks submitted via `submit()`. */
+interface TaskSettlement {
+  resolve: (value: unknown) => void;
+  reject: (reason: unknown) => void;
 }
 
 export class TaskQueueManager {
@@ -32,6 +44,7 @@ export class TaskQueueManager {
   private pendingTasks: Map<string, Task[]> = new Map();
   private workers: Map<string, WorkerRegistration> = new Map();
   private taskRouting: Map<string, (task: unknown) => string> = new Map();
+  private settlements: Map<string, TaskSettlement> = new Map();
 
   createQueue(options: TaskQueueOptions): void {
     this.queues.set(options.name, options);
@@ -68,6 +81,16 @@ export class TaskQueueManager {
           pendingCount: pending.length,
         },
       );
+
+      // Fail awaiting callers rather than leaving their promises pending forever.
+      const deleted = new Error(`Queue deleted while task pending: ${name}`);
+      for (const task of pending) {
+        const settlement = this.settlements.get(task.id);
+        if (settlement) {
+          this.settlements.delete(task.id);
+          settlement.reject(deleted);
+        }
+      }
     }
 
     this.queues.delete(name);
@@ -80,6 +103,9 @@ export class TaskQueueManager {
     queueName: string,
     payload: T,
     correlationId?: string,
+    /** Runs after the task is queued but before dispatch, so callers can
+     * register a settlement that a synchronous dispatch would otherwise miss. */
+    beforeDispatch?: (taskId: string) => void,
   ): Task<T> {
     const queue = this.queues.get(queueName);
     if (!queue) {
@@ -108,9 +134,53 @@ export class TaskQueueManager {
       queue: targetQueue,
     });
 
+    beforeDispatch?.(task.id);
+
     this.dispatchTask(targetQueue);
 
     return task;
+  }
+
+  /**
+   * Whether any registered worker serves this queue. Callers use this to fall
+   * back to local execution instead of enqueuing a task nothing will pick up.
+   */
+  hasWorkerFor(queueName: string): boolean {
+    for (const worker of this.workers.values()) {
+      if (worker.queueNames.includes(queueName)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Enqueue a task and resolve with the worker's return value.
+   * Rejects if the worker callback throws.
+   */
+  submit<TResult = unknown, T = unknown>(
+    queueName: string,
+    payload: T,
+    correlationId?: string,
+  ): Promise<TResult> {
+    return new Promise<TResult>((resolve, reject) => {
+      let task: Task<T>;
+      try {
+        task = this.enqueue(queueName, payload, correlationId, (id) => {
+          this.settlements.set(id, {
+            resolve: resolve as (value: unknown) => void,
+            reject,
+          });
+        });
+      } catch (error) {
+        reject(error);
+        return;
+      }
+      // Guard against an enqueue path that never registered the settlement.
+      if (!this.settlements.has(task.id)) {
+        reject(new Error(`Task ${task.id} was not registered for settlement`));
+      }
+    });
   }
 
   private async dispatchTask(queueName: string): Promise<void> {
@@ -132,8 +202,14 @@ export class TaskQueueManager {
 
     worker.activeCount++;
 
+    const settlement = this.settlements.get(task.id);
+
     try {
-      await worker.callback(task);
+      const result = await worker.callback(task);
+      if (settlement) {
+        this.settlements.delete(task.id);
+        settlement.resolve(result);
+      }
     } catch (error) {
       Logger.error(
         "system",
@@ -141,7 +217,14 @@ export class TaskQueueManager {
         `Task execution error: ${task.id}`,
         error instanceof Error ? error.stack : String(error),
       );
-      queueTasks.unshift(task);
+      if (settlement) {
+        // A submitted task has a caller awaiting it: surface the failure
+        // instead of re-queueing, which would retry a failing task forever.
+        this.settlements.delete(task.id);
+        settlement.reject(error);
+      } else {
+        queueTasks.unshift(task);
+      }
     } finally {
       worker.activeCount--;
     }
@@ -152,7 +235,7 @@ export class TaskQueueManager {
   registerWorker(
     workerId: string,
     queueNames: string[],
-    callback: (task: Task) => Promise<void>,
+    callback: TaskHandler,
     options?: { maxConcurrent?: number },
   ): void {
     const worker: WorkerRegistration = {

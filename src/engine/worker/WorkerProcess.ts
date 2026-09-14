@@ -1,4 +1,4 @@
-import { parentPort } from "node:worker_threads";
+import { parentPort, workerData } from "node:worker_threads";
 import type { WorkflowInstance } from "../../model/Instance";
 import type { ExecuteTaskMessage, WorkerMessage } from "./WorkerMessage";
 
@@ -9,6 +9,16 @@ type Executor = {
 if (!parentPort) {
   throw new Error("WorkerProcess must be run as a worker thread");
 }
+
+/** Stable id assigned by the pool; used for sticky-affinity logging. */
+const workerId: string = workerData?.workerId ?? "worker-unknown";
+
+/**
+ * Executor modules resolved so far, kept across tasks. Sticky affinity routes
+ * an instance back to the same worker, so this cache turns the repeated
+ * dynamic import of an executor into a one-time cost per worker.
+ */
+const executorCache = new Map<string, Executor>();
 
 parentPort.on("message", async (message: WorkerMessage): Promise<void> => {
   if (message.type !== "execute") {
@@ -39,6 +49,7 @@ parentPort.on("message", async (message: WorkerMessage): Promise<void> => {
       payload: {
         output: result,
         duration: Date.now() - startTime,
+        workerId,
       },
     });
   } catch (error: unknown) {
@@ -56,6 +67,17 @@ parentPort.on("message", async (message: WorkerMessage): Promise<void> => {
 });
 
 async function loadExecutor(nodeType: string): Promise<Executor> {
+  const cached = executorCache.get(nodeType);
+  if (cached) {
+    return cached;
+  }
+
+  const executor = await importExecutor(nodeType);
+  executorCache.set(nodeType, executor);
+  return executor;
+}
+
+async function importExecutor(nodeType: string): Promise<Executor> {
   switch (nodeType) {
     case "http": {
       const module = await import("../executors/HttpNodeExecutor");

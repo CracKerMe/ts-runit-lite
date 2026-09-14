@@ -12,6 +12,7 @@ import {
   type SqlNodeConfig,
   SqlNodeExecutor,
 } from "../executors/SqlNodeExecutor";
+import { resolveSecrets } from "../../utils/secrets";
 import {
   completeStandardNode,
   executeInWorker,
@@ -27,10 +28,12 @@ export async function dispatchIoNode(
 
   if (node.type === "http") {
     // 执行 HTTP 节点
-    const httpConfig = requireNodeConfig<HttpNodeConfig>(node, "HTTP");
+    const httpConfig = await resolveSecrets(
+      requireNodeConfig<HttpNodeConfig>(node, "HTTP"),
+    );
 
     const result = shouldUseWorker(node)
-      ? await executeInWorker(node, instance)
+      ? await executeInWorker(node, instance, httpConfig)
       : await HttpNodeExecutor.execute(httpConfig, instance);
     await completeStandardNode({
       node,
@@ -51,7 +54,9 @@ export async function dispatchIoNode(
 
   if (node.type === "sql") {
     // 执行 SQL 节点
-    const sqlConfig = requireNodeConfig<SqlNodeConfig>(node, "SQL");
+    const sqlConfig = await resolveSecrets(
+      requireNodeConfig<SqlNodeConfig>(node, "SQL"),
+    );
 
     const result = await SqlNodeExecutor.execute(sqlConfig, instance);
     await completeStandardNode({
@@ -73,7 +78,9 @@ export async function dispatchIoNode(
 
   if (node.type === "queue") {
     // 执行 Queue 节点
-    const queueConfig = requireNodeConfig<QueueNodeConfig>(node, "Queue");
+    const queueConfig = await resolveSecrets(
+      requireNodeConfig<QueueNodeConfig>(node, "Queue"),
+    );
 
     const result = await QueueNodeExecutor.execute(queueConfig, instance);
     await completeStandardNode({

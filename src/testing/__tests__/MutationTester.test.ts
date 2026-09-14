@@ -131,5 +131,26 @@ describe("MutationTester", () => {
       expect(report.killRate).toBeGreaterThanOrEqual(0);
       expect(report.killRate).toBeLessThanOrEqual(1);
     });
+
+    it("should report killed and survived counts that sum to the total", async () => {
+      const report = await tester.runMutations(mockWorkflow);
+
+      expect(report.killed + report.survived).toBe(report.totalMutations);
+    });
+  });
+
+  it("should not mutate the original workflow definition", () => {
+    const before = JSON.stringify(mockWorkflow);
+
+    tester.testMutation(
+      {
+        type: "delete-node" as const,
+        nodeId: "process",
+        description: "Delete process node",
+      },
+      mockWorkflow,
+    );
+
+    expect(JSON.stringify(mockWorkflow)).toBe(before);
   });
 });

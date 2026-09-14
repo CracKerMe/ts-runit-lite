@@ -38,6 +38,20 @@ export type { SubworkflowResult } from "./SubworkflowExecutor";
 export { SubworkflowExecutor } from "./SubworkflowExecutor";
 export { TaskExecutor } from "./TaskExecutor";
 export {
+  type Task,
+  type TaskHandler,
+  TaskQueueManager,
+  taskQueueManager,
+  type TaskQueueOptions,
+  type TaskQueueType,
+} from "./TaskQueueManager";
+export {
+  StickyExecutionManager,
+  stickyExecutionManager,
+  type StickyOptions,
+  type StickyWorker,
+} from "./StickyExecutionManager";
+export {
   type WaitForCompletionOptions,
   WorkflowEngineV2,
 } from "./WorkflowEngineV2";

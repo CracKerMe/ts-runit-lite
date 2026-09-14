@@ -4,6 +4,11 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { Logger } from "../../utils/Logger";
 import {
+  StickyExecutionManager,
+  stickyExecutionManager,
+} from "../StickyExecutionManager";
+import {
+  type ExecuteTaskMessage,
   isTaskErrorMessage,
   isTaskResultMessage,
   type WorkerMessage,
@@ -17,6 +22,8 @@ export interface WorkerPoolConfig {
 }
 
 interface PooledWorker {
+  /** Stable identity used for sticky (instance → worker) affinity. */
+  workerId: string;
   worker: Worker;
   busy: boolean;
   lastUsed: number;
@@ -28,6 +35,9 @@ interface QueuedTask {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
   timeout: NodeJS.Timeout;
+  /** Set for execute messages; drives sticky worker affinity. */
+  instanceId?: string;
+  workflowId?: string;
 }
 
 export class WorkerPool extends EventEmitter {
@@ -36,11 +46,14 @@ export class WorkerPool extends EventEmitter {
   private readonly taskQueue: QueuedTask[] = [];
   private readonly pendingTasks = new Map<string, QueuedTask>();
   private readonly idleTimer: NodeJS.Timeout;
+  private readonly sticky: StickyExecutionManager;
   private shuttingDown = false;
+  private workerSequence = 0;
 
-  constructor(config: WorkerPoolConfig) {
+  constructor(config: WorkerPoolConfig, sticky?: StickyExecutionManager) {
     super();
     this.config = config;
+    this.sticky = sticky ?? stickyExecutionManager;
     this.validateConfig(config);
     this.initializeWorkers();
     this.idleTimer = setInterval(
@@ -69,11 +82,14 @@ export class WorkerPool extends EventEmitter {
         this.processQueue();
       }, this.config.taskTimeout);
 
+      const payload = (message as ExecuteTaskMessage).payload;
       const task: QueuedTask = {
         message,
         resolve,
         reject,
         timeout,
+        instanceId: payload?.instanceId,
+        workflowId: payload?.workflowId,
       };
 
       this.taskQueue.push(task);
@@ -96,6 +112,10 @@ export class WorkerPool extends EventEmitter {
       task.reject(shutdownError);
     }
     this.pendingTasks.clear();
+
+    for (const pooled of this.workers) {
+      this.sticky.releaseWorker(pooled.workerId);
+    }
 
     await Promise.all(this.workers.map((pooled) => pooled.worker.terminate()));
     this.workers.splice(0);
@@ -136,10 +156,14 @@ export class WorkerPool extends EventEmitter {
   }
 
   private createWorker(): PooledWorker {
+    this.workerSequence += 1;
+    const workerId = `worker-${this.workerSequence}`;
     const worker = new Worker(this.getWorkerScriptPath(), {
       execArgv: this.getWorkerExecArgv(),
+      workerData: { workerId },
     });
     const pooled: PooledWorker = {
+      workerId,
       worker,
       busy: false,
       lastUsed: Date.now(),
@@ -216,21 +240,65 @@ export class WorkerPool extends EventEmitter {
       return;
     }
 
+    const task = this.taskQueue[0];
+
+    // Prefer the worker this instance is already bound to, so its cached state
+    // stays warm. Falls back to any idle worker when the bound one is busy —
+    // affinity is an optimization, never a reason to stall a task.
+    const preferred = this.findPreferredWorker(task);
+    if (preferred) {
+      this.assignTask(preferred, task);
+      return;
+    }
+
     const idleWorker = this.workers.find((worker) => !worker.busy);
     if (idleWorker) {
-      this.assignTask(idleWorker);
+      this.assignTask(idleWorker, task);
       return;
     }
 
     if (this.workers.length < this.config.maxWorkers) {
-      this.assignTask(this.createWorker());
+      this.assignTask(this.createWorker(), task);
     }
   }
 
-  private assignTask(pooled: PooledWorker): void {
-    const task = this.taskQueue.shift();
+  /**
+   * Resolve the sticky-bound worker for a task, if it exists and is free.
+   */
+  private findPreferredWorker(task: QueuedTask): PooledWorker | undefined {
+    if (!task.instanceId || !this.sticky.isEnabled()) {
+      return undefined;
+    }
+
+    const boundWorkerId = this.sticky.getAssignedWorker(task.instanceId);
+    if (!boundWorkerId) {
+      return undefined;
+    }
+
+    return this.workers.find(
+      (worker) => worker.workerId === boundWorkerId && !worker.busy,
+    );
+  }
+
+  private assignTask(pooled: PooledWorker, expected?: QueuedTask): void {
+    const index = expected ? this.taskQueue.indexOf(expected) : 0;
+    if (index < 0) {
+      return;
+    }
+
+    const [task] = this.taskQueue.splice(index, 1);
     if (!task) {
       return;
+    }
+
+    // Bind the instance to this worker so subsequent nodes of the same
+    // instance land here again while the binding is alive.
+    if (task.instanceId && task.workflowId) {
+      void this.sticky.tryAssignWorker(
+        task.instanceId,
+        task.workflowId,
+        pooled.workerId,
+      );
     }
 
     pooled.busy = true;
@@ -281,6 +349,10 @@ export class WorkerPool extends EventEmitter {
   }
 
   private removeWorker(pooled: PooledWorker): void {
+    // Release affinity bindings first: an instance bound to a worker that no
+    // longer exists would otherwise never regain a preferred worker.
+    this.sticky.releaseWorker(pooled.workerId);
+
     const index = this.workers.indexOf(pooled);
     if (index >= 0) {
       this.workers.splice(index, 1);

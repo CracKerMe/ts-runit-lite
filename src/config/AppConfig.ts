@@ -239,6 +239,24 @@ const WorkerPoolConfigSchema = z.object({
     .max(3_600_000)
     .default(300_000)
     .describe("Worker idle timeout in ms"),
+  stickyEnabled: z
+    .boolean()
+    .default(true)
+    .describe("Route an instance's tasks back to the same worker"),
+  stickyCacheSize: z
+    .number()
+    .int()
+    .min(1)
+    .max(10_000)
+    .default(100)
+    .describe("Max cached entries per sticky worker"),
+  stickyTtlMs: z
+    .number()
+    .int()
+    .min(1000)
+    .max(3_600_000)
+    .default(60_000)
+    .describe("Sticky binding TTL in ms"),
 });
 
 // ── Secret Manager Config ────────────────────────────────────────────────────
@@ -417,6 +435,12 @@ function parseEnvToRawConfig(): Record<string, unknown> {
         process.env.WORKER_POOL_IDLE_TIMEOUT_MS,
         300_000,
       ),
+      stickyEnabled: parseEnvBoolean(process.env.WORKER_STICKY_ENABLED, true),
+      stickyCacheSize: parseEnvNumber(
+        process.env.WORKER_STICKY_CACHE_SIZE,
+        100,
+      ),
+      stickyTtlMs: parseEnvNumber(process.env.WORKER_STICKY_TTL_MS, 60_000),
     },
     secretProvider: (process.env.SECRET_PROVIDER || "env") as
       | "env"

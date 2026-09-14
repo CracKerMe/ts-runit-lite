@@ -213,8 +213,15 @@ export class SecretManager {
    * Create a SecretManager with the appropriate provider based on environment
    */
   static create(): SecretManager {
-    const providerType = process.env.SECRET_PROVIDER || "env";
+    return SecretManager.createFor(process.env.SECRET_PROVIDER || "env");
+  }
 
+  /**
+   * Create a SecretManager for an explicit provider name.
+   * Throws UnsupportedSecretProviderError for providers that are declared but
+   * not implemented, so misconfiguration surfaces at startup.
+   */
+  static createFor(providerType: string): SecretManager {
     let provider: SecretProvider;
 
     switch (providerType.toLowerCase()) {
