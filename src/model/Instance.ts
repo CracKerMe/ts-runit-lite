@@ -31,7 +31,18 @@ export interface WorkflowInstance {
   triggeredBy?: "api" | "event" | "cron" | "subworkflow";
   /** 节点状态树，存储各节点的执行输出 */
   state?: {
-    nodes?: Record<string, { output?: unknown }>;
+    nodes?: Record<
+      string,
+      {
+        output?: unknown;
+        /**
+         * 绝对到期时间戳（epoch ms）。由 durable `wait` 节点首次进入时写入，
+         * 使等待时长在进程重启后按原定到期时刻续算而非重新计时。
+         * 节点完成后清除。
+         */
+        deadline?: number;
+      }
+    >;
   };
   /** Search Attributes - 自定义索引属性 */
   searchAttributes?: Record<string, string | number | boolean>;

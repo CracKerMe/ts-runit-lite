@@ -123,4 +123,16 @@ export interface WaitNodeConfig {
   durationMs?: number;
   /** 绝对到期时间（ISO 8601 字符串） */
   until?: string;
+  /**
+   * 是否把到期时间固化到实例状态（默认 true）。
+   *
+   * 开启后，节点首次进入时把绝对 deadline 写入
+   * `instance.state.nodes[nodeId].deadline` 并持久化；进程重启后实例恢复、
+   * 重新进入该节点时按原 deadline 续等剩余时长，而不是从头重新计时。
+   * 这让相对时长的 `durationMs` 具备与绝对时间 `until` 同等的跨重启语义。
+   *
+   * 置为 false 可恢复旧行为（每次进入都从当前时刻重新计时），
+   * 适用于 loop 体内需要每轮完整等待的场景。
+   */
+  durable?: boolean;
 }

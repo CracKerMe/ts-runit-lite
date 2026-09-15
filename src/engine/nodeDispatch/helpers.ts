@@ -14,18 +14,15 @@ import { WorkerPool, type WorkerPoolConfig } from "../worker/WorkerPool";
 export const SLOW_EXECUTION_THRESHOLD_MS = 5000; // 5 seconds default
 
 /**
- * Resolve how long a `wait` node should sleep for, in milliseconds.
+ * Resolve the absolute epoch-ms deadline a `wait` node should sleep until,
+ * ignoring any deadline already pinned on the instance.
  *
  * Precedence: `config.until` (absolute ISO timestamp) > `config.durationMs`
  * (relative) > `node.timeout` (legacy relative-ms field, kept for backward
  * compatibility). Returns `undefined` when none are set (node.type "wait"
  * with no timing config is a no-op, same as today).
- *
- * `until` in the past resolves to `0` (fires immediately) rather than a
- * negative timeout, since `setTimeout` treats a negative delay as 0 anyway
- * but callers may want to log/branch on it explicitly.
  */
-export function resolveWaitDurationMs(node: TaskNode): number | undefined {
+function resolveFreshDeadline(node: TaskNode): number | undefined {
   const config = node.config as WaitNodeConfig | undefined;
 
   if (config?.until) {
@@ -35,15 +32,79 @@ export function resolveWaitDurationMs(node: TaskNode): number | undefined {
         `Wait node config.until is not a valid date: ${config.until}`,
       );
     }
-    return Math.max(0, deadline - Date.now());
+    return deadline;
   }
 
   if (config?.durationMs !== undefined) {
-    return Math.max(0, config.durationMs);
+    return Date.now() + Math.max(0, config.durationMs);
   }
 
-  return node.timeout;
+  if (node.timeout !== undefined) {
+    return Date.now() + Math.max(0, node.timeout);
+  }
+
+  return undefined;
 }
+
+/**
+ * A durable wait pins its deadline on first entry, unless explicitly opted out
+ * with `config.durable: false`. `until` is absolute and therefore already
+ * restart-safe, so pinning it is harmless but redundant.
+ */
+function isDurableWait(node: TaskNode): boolean {
+  const config = node.config as WaitNodeConfig | undefined;
+  return config?.durable !== false;
+}
+
+/**
+ * Resolve how long a `wait` node should sleep for, in milliseconds.
+ *
+ * When `instance` is supplied and the node is durable (the default), the
+ * absolute deadline is pinned into `instance.state.nodes[node.id].deadline` on
+ * first entry and reused on every subsequent entry. This is what makes a
+ * relative `durationMs` survive a process restart: `resumeRunningInstances()`
+ * re-enters the still-pending wait node, and rather than restarting the clock
+ * from zero, it waits out only the time remaining against the original
+ * deadline. Without the pin, a "wait 7 days" node restarted on day 6 would
+ * wait another 7 days.
+ *
+ * Callers that only need the configured duration (validation, dry-run, hook
+ * payloads) may omit `instance` — no deadline is pinned in that case.
+ *
+ * A deadline already in the past resolves to `0` (fires immediately) rather
+ * than a negative timeout, since `setTimeout` treats a negative delay as 0
+ * anyway but callers may want to log/branch on it explicitly.
+ */
+export function resolveWaitDurationMs(
+  node: TaskNode,
+  instance?: WorkflowInstance,
+): number | undefined {
+  if (!instance || !isDurableWait(node)) {
+    const deadline = resolveFreshDeadline(node);
+    return deadline === undefined
+      ? undefined
+      : Math.max(0, deadline - Date.now());
+  }
+
+  const nodeStates = ensureNodeState(instance);
+  const existing = nodeStates[node.id] as
+    | { output?: unknown; deadline?: number }
+    | undefined;
+
+  // Reuse a deadline pinned by an earlier entry (i.e. before a restart).
+  if (typeof existing?.deadline === "number") {
+    return Math.max(0, existing.deadline - Date.now());
+  }
+
+  const deadline = resolveFreshDeadline(node);
+  if (deadline === undefined) {
+    return undefined;
+  }
+
+  nodeStates[node.id] = { ...existing, deadline };
+  return Math.max(0, deadline - Date.now());
+}
+
 let workerPool: WorkerPool | null = null;
 
 export function initWorkerPool(config?: Partial<WorkerPoolConfig>): WorkerPool {

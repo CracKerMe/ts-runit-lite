@@ -137,6 +137,7 @@
 export interface WaitNodeConfig {
   durationMs?: number; // 相对等待时长（毫秒）
   until?: string; // 绝对到期时间（ISO 8601 字符串）
+  durable?: boolean; // 到期时间是否固化到实例状态（默认 true）
 }
 ```
 
@@ -162,7 +163,36 @@ export interface WaitNodeConfig {
 
 输出：`{ waited: <实际等待毫秒数>, deadline: <到期时间戳(ms)> }`，可通过 `${cooldown.output.waited}` 引用。
 
-> **不是崩溃安全的长等待**：等待基于进程内 `setTimeout` 实现，进程重启会丢失未到期的等待。需要跨重启存活的长延时（例如"3 天后提醒"）目前不受支持，请改用外部调度器在到期后调用 API 触发事件（`event` 节点）。
+### 跨重启的持久等待（durable wait）
+
+默认情况下（`durable` 缺省即为 `true`），`wait` 节点**首次进入时会把绝对到期时刻固化**到
+`instance.state.nodes[nodeId].deadline` 并立即持久化。进程重启后，
+`resumeRunningInstancesFromStorage()` 恢复实例并重新进入该节点时，
+只等待**距原定 deadline 的剩余时长**，而不是从头重新计时。
+
+这让相对时长的 `durationMs` 获得了与绝对时间 `until` 同等的跨重启语义：
+
+- 一个"7 天后自动确认收货"的节点，在第 6 天重启，恢复后只会再等 1 天，而不是又等 7 天
+- 停机期间已经越过 deadline 的等待，恢复后**立即触发**，不会被静默吞掉
+
+```json
+{
+  "id": "autoConfirmReceipt",
+  "type": "wait",
+  "config": { "durationMs": 604800000 },
+  "next": ["confirmReceipt"]
+}
+```
+
+**何时关闭 `durable`**：在 `loop` 体内需要**每轮都完整等待**固定时长时，设 `durable: false`
+恢复"每次进入都重新计时"的旧行为。节点正常触发后固化的 deadline 会被清除，
+因此循环/回滚重新进入同一节点时会开启新一轮等待，不会因为旧 deadline 而瞬间穿透。
+
+> **仍然受单进程限制**：等待期间**进程必须最终重新起来**才能推进——引擎不会在进程外替你计时。
+> 等待的精度上限是"重启后恢复的那一刻"，因此这适合**到期即可、不要求秒级准时**的业务延时
+> （自动确认收货、试用到期、N 天后回访）。若要求**准时触发**、或流程需要在进程长期下线时
+> 依然按时推进，仍应使用外部调度器到期回调 `event` 节点的模式
+> （见 [BUSINESS_SCENARIOS.md](./BUSINESS_SCENARIOS.md) 的 **P-11 外部定时唤醒**）。
 
 ---
 
