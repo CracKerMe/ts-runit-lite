@@ -19,10 +19,21 @@ export class GracefulShutdown {
   }
 
   /**
-   * 注册关闭时需要执行的回调
+   * 注册关闭时需要执行的回调（追加到链尾）
    */
   registerCallback(callback: () => Promise<void>): void {
     this.shutdownCallbacks.push(callback);
+  }
+
+  /**
+   * 注册关闭回调并插到链首。
+   *
+   * 用于必须最先执行的步骤——典型是停止接受新的 HTTP 连接：
+   * 必须先于引擎和存储的销毁，否则关闭过程中仍可能有新请求打进来，
+   * 落到已经开始拆解的组件上。
+   */
+  registerCallbackFirst(callback: () => Promise<void>): void {
+    this.shutdownCallbacks.unshift(callback);
   }
 
   /**

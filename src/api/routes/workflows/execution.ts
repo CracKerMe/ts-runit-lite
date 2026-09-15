@@ -8,7 +8,7 @@ import { sendError, sendSuccess } from "../../response";
 import type { StartWorkflowDto } from "../../types";
 import {
   hashRequestBody,
-  IdempotencyStore,
+  sharedIdempotencyStore,
 } from "../../utils/IdempotencyStore";
 import {
   getRequestStorage,
@@ -180,7 +180,7 @@ export function registerExecutionRoutes(router: Router): void {
 
         const idempotencyKey = req.get("Idempotency-Key");
         if (idempotencyKey) {
-          const store = new IdempotencyStore();
+          const store = sharedIdempotencyStore;
           const bodyHash = hashRequestBody(req.body ?? {});
           const reserve = await store.reserve(
             `workflow-start:${req.params?.id}`,

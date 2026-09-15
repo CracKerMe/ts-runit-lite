@@ -8,7 +8,11 @@ import { randomUUID } from "node:crypto";
 import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
 import type { WorkflowInstance } from "../../model/Instance";
 import type { WorkflowDefinition } from "../../model/Workflow";
-import type { StorageProvider } from "../../storage/StorageProvider";
+import type {
+  InstanceSortField,
+  InstanceSortOrder,
+  StorageProvider,
+} from "../../storage/StorageProvider";
 import { Logger } from "../../utils/Logger";
 import { ServiceError } from "./WorkflowApplicationService";
 
@@ -93,6 +97,8 @@ export class InstanceApplicationService {
       );
     }
 
+    // Sorting is delegated to the storage layer so that it runs *before*
+    // pagination — sorting an already-sliced page returns the wrong rows.
     const { instances, total } = await this.storage.queryInstances({
       workflowId: params.workflowId,
       status: params.status,
@@ -101,34 +107,8 @@ export class InstanceApplicationService {
       page: params.page,
       pageSize: params.pageSize,
       parentInstanceId: params.parentId,
-    });
-
-    // Sort
-    const sortBy = params.sortBy || "createdAt";
-    const sortOrder = params.sortOrder || "desc";
-    instances.sort((a: WorkflowInstance, b: WorkflowInstance) => {
-      let aVal: number | string;
-      let bVal: number | string;
-
-      if (sortBy === "updatedAt") {
-        aVal = toEpochMs(a.updatedAt);
-        bVal = toEpochMs(b.updatedAt);
-      } else if (sortBy === "status") {
-        aVal = a.status;
-        bVal = b.status;
-      } else {
-        aVal = toEpochMs(a.createdAt);
-        bVal = toEpochMs(b.createdAt);
-      }
-
-      if (typeof aVal === "string" && typeof bVal === "string") {
-        return sortOrder === "asc"
-          ? aVal.localeCompare(bVal)
-          : bVal.localeCompare(aVal);
-      }
-      return sortOrder === "asc"
-        ? (aVal as number) - (bVal as number)
-        : (bVal as number) - (aVal as number);
+      sortBy: params.sortBy as InstanceSortField | undefined,
+      sortOrder: params.sortOrder as InstanceSortOrder | undefined,
     });
 
     // Enrich with progress
@@ -427,12 +407,6 @@ export class InstanceApplicationService {
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────
-
-function toEpochMs(date: Date | string | number): number {
-  if (date instanceof Date) return date.getTime();
-  if (typeof date === "number") return date;
-  return new Date(date).getTime();
-}
 
 function getTotalNodes(
   workflow: WorkflowDefinition | null | undefined,

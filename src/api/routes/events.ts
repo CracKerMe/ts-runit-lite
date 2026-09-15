@@ -4,7 +4,10 @@ import { getContainer } from "../../container";
 import { errorMessage, errorStack, Logger } from "../../utils/Logger";
 import { sendError, sendSuccess } from "../response";
 import type { EventTriggerDto } from "../types";
-import { hashRequestBody, IdempotencyStore } from "../utils/IdempotencyStore";
+import {
+  hashRequestBody,
+  sharedIdempotencyStore,
+} from "../utils/IdempotencyStore";
 import {
   getRequestEngine,
   getRequestStorage,
@@ -40,7 +43,7 @@ router.post(
 
       const idempotencyKey = req.get("Idempotency-Key");
       if (idempotencyKey) {
-        const store = new IdempotencyStore();
+        const store = sharedIdempotencyStore;
         const bodyHash = hashRequestBody(req.body ?? {});
         const reserve = await store.reserve(
           `event-trigger:${event}`,

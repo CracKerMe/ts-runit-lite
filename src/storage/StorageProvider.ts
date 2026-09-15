@@ -141,6 +141,9 @@ export interface EventQueryParams {
 }
 
 // Query parameters for instances
+export type InstanceSortField = "createdAt" | "updatedAt" | "status";
+export type InstanceSortOrder = "asc" | "desc";
+
 export interface InstanceQueryParams {
   workflowId?: string;
   status?: string;
@@ -149,6 +152,14 @@ export interface InstanceQueryParams {
   page?: number;
   pageSize?: number;
   parentInstanceId?: string;
+  /**
+   * Sort field applied *before* pagination. Defaults to `createdAt`.
+   * Sorting must happen in the storage layer — sorting a page after it has
+   * been sliced yields duplicated and missing rows across pages.
+   */
+  sortBy?: InstanceSortField;
+  /** Sort direction applied before pagination. Defaults to `desc`. */
+  sortOrder?: InstanceSortOrder;
 }
 
 export interface StorageProvider {

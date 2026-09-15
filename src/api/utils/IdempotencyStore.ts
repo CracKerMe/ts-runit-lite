@@ -40,9 +40,20 @@ export function hashRequestBody(body: unknown): string {
   return crypto.createHash("sha256").update(payload).digest("hex");
 }
 
+export interface IdempotencyStoreOptions {
+  /** Maximum retained keys before the oldest are evicted (default: 10000). */
+  maxSize?: number;
+  /** Sweep interval for expired keys in ms (default: 300000 = 5 minutes). */
+  cleanupIntervalMs?: number;
+}
+
 /**
  * Single-process idempotency store. Request keys are intentionally ephemeral
  * and are not persisted by the workflow storage provider.
+ *
+ * NOTE: this must be shared across requests to be meaningful. A per-request
+ * instance makes every `reserve()` return `reserved`, silently disabling
+ * idempotency — see `sharedIdempotencyStore` below.
  */
 export class IdempotencyStore {
   private memory = new Map<
@@ -50,8 +61,68 @@ export class IdempotencyStore {
     { expiresAt: number; record: IdempotencyRecord }
   >();
 
+  private readonly maxSize: number;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(options: IdempotencyStoreOptions = {}) {
+    this.maxSize = options.maxSize ?? 10_000;
+
+    // Entries carry per-entry TTLs (60s pending vs 24h completed), so a
+    // fixed-TTL BoundedMap does not fit. Sweep expired keys periodically
+    // instead — lazy expiry alone never reclaims keys that are never re-read.
+    const cleanupMs = options.cleanupIntervalMs ?? 300_000;
+    if (cleanupMs > 0) {
+      this.cleanupTimer = setInterval(() => this.evictExpired(), cleanupMs);
+      this.cleanupTimer.unref?.();
+    }
+  }
+
   private now(): number {
     return Date.now();
+  }
+
+  /** Remove every entry whose TTL has elapsed. Returns the count removed. */
+  evictExpired(): number {
+    const now = this.now();
+    let evicted = 0;
+    for (const [key, entry] of this.memory) {
+      if (entry.expiresAt <= now) {
+        this.memory.delete(key);
+        evicted++;
+      }
+    }
+    return evicted;
+  }
+
+  /** Stop the sweep timer. Call on shutdown. */
+  dispose(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+    this.memory.clear();
+  }
+
+  get size(): number {
+    return this.memory.size;
+  }
+
+  /**
+   * Insert with a capacity bound. Keys are caller-supplied, so an unbounded
+   * map is a memory-exhaustion vector.
+   */
+  private store(
+    key: string,
+    entry: { expiresAt: number; record: IdempotencyRecord },
+  ): void {
+    if (!this.memory.has(key) && this.memory.size >= this.maxSize) {
+      this.evictExpired();
+      if (this.memory.size >= this.maxSize) {
+        const oldest = this.memory.keys().next().value;
+        if (oldest !== undefined) this.memory.delete(oldest);
+      }
+    }
+    this.memory.set(key, entry);
   }
 
   private buildKey(namespace: string, key: string): string {
@@ -82,7 +153,7 @@ export class IdempotencyStore {
       return { type: "in_progress" };
     }
 
-    this.memory.set(redisKey, {
+    this.store(redisKey, {
       expiresAt: now + pendingTtlSeconds * 1000,
       record: { status: "pending", bodyHash, createdAt: now },
     });
@@ -106,7 +177,7 @@ export class IdempotencyStore {
       value,
     };
 
-    this.memory.set(redisKey, {
+    this.store(redisKey, {
       expiresAt: this.now() + ttlSeconds * 1000,
       record,
     });
@@ -126,3 +197,11 @@ export class IdempotencyStore {
     );
   }
 }
+
+/**
+ * Process-wide idempotency store shared by every route.
+ *
+ * Idempotency is only meaningful across requests, so route handlers must use
+ * this instance rather than constructing their own per request.
+ */
+export const sharedIdempotencyStore = new IdempotencyStore();

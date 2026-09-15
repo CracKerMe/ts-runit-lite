@@ -38,39 +38,39 @@ ts-workflow-engine-lite 在真实业务中可覆盖的场景，并给出每个�
 
 ### 1.1 节点原语（15 种）
 
-| 类别         | 节点                                    | 组合价值                                             |
-| ------------ | --------------------------------------- | ---------------------------------------------------- |
-| **计算**     | `action`、`transform`                   | 业务逻辑与数据整形；`transform` 保持工作流纯 JSON 可序列化 |
-| **集成**     | `http`、`sql`、`queue`、`notification`  | 对外连接的四条腿：API / 数据库 / 消息中间件 / 人的触达 |
-| **控制流**   | `condition`、`router`、`loop`、`join`   | 二分支 / 多分支 / 迭代 / 汇聚                        |
-| **时间**     | `wait`、`event`                         | 相对延时、绝对时点、外部事件唤醒                     |
-| **人机协同** | `approval`                              | 把"人"作为一个可编排的异步节点                       |
-| **组合**     | `subworkflow`                           | 流程复用与分层，构建流程库                           |
-| **可靠性**   | `rollback`                              | Saga 补偿事务                                        |
+| 类别         | 节点                                   | 组合价值                                                   |
+| ------------ | -------------------------------------- | ---------------------------------------------------------- |
+| **计算**     | `action`、`transform`                  | 业务逻辑与数据整形；`transform` 保持工作流纯 JSON 可序列化 |
+| **集成**     | `http`、`sql`、`queue`、`notification` | 对外连接的四条腿：API / 数据库 / 消息中间件 / 人的触达     |
+| **控制流**   | `condition`、`router`、`loop`、`join`  | 二分支 / 多分支 / 迭代 / 汇聚                              |
+| **时间**     | `wait`、`event`                        | 相对延时、绝对时点、外部事件唤醒                           |
+| **人机协同** | `approval`                             | 把"人"作为一个可编排的异步节点                             |
+| **组合**     | `subworkflow`                          | 流程复用与分层，构建流程库                                 |
+| **可靠性**   | `rollback`                             | Saga 补偿事务                                              |
 
 ### 1.2 节点之外的编排能力
 
 这些能力经常是场景能否成立的**决定性因素**，比节点类型本身更关键：
 
-| 能力                | API / 配置                                                    | 解锁的场景特征                       |
-| ------------------- | ------------------------------------------------------------- | ------------------------------------ |
-| **Signal**          | `engine.signal(instanceId, name, payload)`                    | 运行中流程的外部干预、审批回调、数据补投 |
-| **Query**           | `engine.query(instanceId, name)`（只读）                      | 向用户实时展示流程进度、中间状态     |
-| **Update**          | `engine.update(instanceId, name, payload)`（同步追踪写）      | 运行中改参数：改预算、改收货地址、改配额 |
-| **生命周期控制**    | `pause` / `resume` / `cancel` / `terminate` `Instance`        | 熔断、人工叫停、灰度暂停             |
-| **Cron 调度**       | `EnhancedCronScheduler`（Jitter / Backfill / 时间窗口）        | 定时批处理、错峰削峰、历史数据补跑   |
-| **事件总线 + 去重** | `EventBus` / `EventDeduplicator` / `triggerEvents`            | 事件驱动架构、幂等消费               |
-| **Hook 生命周期**   | `HookManager`                                                 | 审计、埋点、外部系统同步             |
-| **DLQ**             | `DeadLetterQueue` + `/dlq` REST 端点（含批量重试）            | 失败兜底、运营手工干预               |
-| **Webhook**         | `/webhooks` 端点（注册、投递、重试、清理）                    | 向外部系统主动推送流程状态           |
-| **Analytics / SLA** | `/analytics/overview`、`/anomalies`、`/sla`                   | 流程效能度量、超时预警、异常检测     |
-| **任务队列路由**    | 节点 `taskQueue` + `TaskQueueManager`                         | 把重活分发给专用 worker，隔离资源    |
-| **Worker 线程池**   | `WORKER_POOL_ENABLED` + Sticky 亲和性                         | CPU/IO 密集型节点卸载，主线程不阻塞  |
-| **Secret 解析**     | `${secret:NAME}`（http/sql/queue 节点）                       | 凭据不落工作流定义，安全合规         |
-| **调试能力**        | `WorkflowDebugger` + `BreakpointManager`                      | 复杂流程的断点调试                   |
-| **测试能力**        | `TestGenerator`、`MutationTester`、`DryRunExecutor`           | 流程上线前的自动验证、变更影响分析   |
-| **模板系统**        | `/templates` + `instantiate`                                  | 让业务人员基于模板自助创建流程       |
-| **版本管理**        | `workflow-versions` 存储目录                                  | 流程灰度、回滚、A/B                  |
+| 能力                | API / 配置                                               | 解锁的场景特征                           |
+| ------------------- | -------------------------------------------------------- | ---------------------------------------- |
+| **Signal**          | `engine.signal(instanceId, name, payload)`               | 运行中流程的外部干预、审批回调、数据补投 |
+| **Query**           | `engine.query(instanceId, name)`（只读）                 | 向用户实时展示流程进度、中间状态         |
+| **Update**          | `engine.update(instanceId, name, payload)`（同步追踪写） | 运行中改参数：改预算、改收货地址、改配额 |
+| **生命周期控制**    | `pause` / `resume` / `cancel` / `terminate` `Instance`   | 熔断、人工叫停、灰度暂停                 |
+| **Cron 调度**       | `EnhancedCronScheduler`（Jitter / Backfill / 时间窗口）  | 定时批处理、错峰削峰、历史数据补跑       |
+| **事件总线 + 去重** | `EventBus` / `EventDeduplicator` / `triggerEvents`       | 事件驱动架构、幂等消费                   |
+| **Hook 生命周期**   | `HookManager`                                            | 审计、埋点、外部系统同步                 |
+| **DLQ**             | `DeadLetterQueue` + `/dlq` REST 端点（含批量重试）       | 失败兜底、运营手工干预                   |
+| **Webhook**         | `/webhooks` 端点（注册、投递、重试、清理）               | 向外部系统主动推送流程状态               |
+| **Analytics / SLA** | `/analytics/overview`、`/anomalies`、`/sla`              | 流程效能度量、超时预警、异常检测         |
+| **任务队列路由**    | 节点 `taskQueue` + `TaskQueueManager`                    | 把重活分发给专用 worker，隔离资源        |
+| **Worker 线程池**   | `WORKER_POOL_ENABLED` + Sticky 亲和性                    | CPU/IO 密集型节点卸载，主线程不阻塞      |
+| **Secret 解析**     | `${secret:NAME}`（http/sql/queue 节点）                  | 凭据不落工作流定义，安全合规             |
+| **调试能力**        | `WorkflowDebugger` + `BreakpointManager`                 | 复杂流程的断点调试                       |
+| **测试能力**        | `TestGenerator`、`MutationTester`、`DryRunExecutor`      | 流程上线前的自动验证、变更影响分析       |
+| **模板系统**        | `/templates` + `instantiate`                             | 让业务人员基于模板自助创建流程           |
+| **版本管理**        | `workflow-versions` 存储目录                             | 流程灰度、回滚、A/B                      |
 
 ### 1.3 三条关键约束（贯穿全文）
 
@@ -345,18 +345,18 @@ action(提交退货) → router(按金额/原因分诊)
 
 #### 1.5 其他电商场景（骨架同上，差异在节点参数）
 
-| 场景             | 核心组合                                                          |
-| ---------------- | ----------------------------------------------------------------- |
-| 购物车弃单挽回   | P-11 定时唤醒 → condition(是否已下单) → notification(优惠券)       |
+| 场景             | 核心组合                                                            |
+| ---------------- | ------------------------------------------------------------------- |
+| 购物车弃单挽回   | P-11 定时唤醒 → condition(是否已下单) → notification(优惠券)        |
 | 价格监控与调价   | P-12 Cron → loop(遍历 SKU) → http(抓竞品价) → condition → sql(更新) |
-| 商品上架审核     | approval(内容审核) + approval(类目审核) 会签 → P-3                 |
-| 预售/定金尾款    | event(定金支付) → P-11(尾款期到) → event(尾款支付) → 履约          |
-| 多仓库智能发货   | fanout 查各仓库存 → join(all) → transform(选最优仓) → http(下发)   |
-| 跨境订单清关     | subworkflow(报关) + event(海关放行) + P-8(重试单一通道)            |
-| 会员等级升降     | P-12 Cron → sql(算消费额) → router(分级) → notification            |
-| 拼团成团判定     | event(每人支付) 累积 → condition(人数达标?) → 成团 / 超时退款      |
-| 优惠券发放与核销 | loop(批量发券) + 幂等 P-10 防重复发放                              |
-| 直播带货订单     | queue(consume 弹幕下单) → 高并发 P-6 批处理                        |
+| 商品上架审核     | approval(内容审核) + approval(类目审核) 会签 → P-3                  |
+| 预售/定金尾款    | event(定金支付) → P-11(尾款期到) → event(尾款支付) → 履约           |
+| 多仓库智能发货   | fanout 查各仓库存 → join(all) → transform(选最优仓) → http(下发)    |
+| 跨境订单清关     | subworkflow(报关) + event(海关放行) + P-8(重试单一通道)             |
+| 会员等级升降     | P-12 Cron → sql(算消费额) → router(分级) → notification             |
+| 拼团成团判定     | event(每人支付) 累积 → condition(人数达标?) → 成团 / 超时退款       |
+| 优惠券发放与核销 | loop(批量发券) + 幂等 P-10 防重复发放                               |
+| 直播带货订单     | queue(consume 弹幕下单) → 高并发 P-6 批处理                         |
 
 ---
 
@@ -430,6 +430,7 @@ start → transform(取申请单)
 ```
 
 **变体**：
+
 - **会签**（全部同意才通过）：扇出多个 `approval` + `join(mode: "all")`
 - **或签**（任一同意即通过）：扇出 + `join(mode: "any")`
 - **加签/转办**：`Signal` 注入新审批人（P-13）
@@ -458,18 +459,18 @@ approval(主管批准) → fanout → [禁用账号, 回收设备, 结算工资,
 
 #### 3.4 其他企业流程
 
-| 场景           | 核心组合                                                            |
-| -------------- | ------------------------------------------------------------------- |
-| 请假/加班/出差 | P-3 + 日历 http 集成 + P-11 到期提醒                                |
-| 报销与发票核验 | loop(逐张发票) → http(税局验真) → join → approval → 打款             |
-| 采购到付款 P2P | subworkflow(询价/比价/合同/收货/对账) 五段式 P-4                    |
-| 合同审批与续签 | P-3 多方会签 + P-11(到期前 30 天提醒续签)                           |
-| 预算申请与管控 | approval + Update(P-13 运行中调整预算额度)                          |
-| 绩效考核周期   | P-12 Cron 启动 → loop(全员) → subworkflow(个人考核) → 汇总          |
-| 培训与认证到期 | P-11 定时唤醒 → condition(是否已续证) → 分级 notification            |
-| 资产盘点       | P-12 Cron → loop(资产清单) → approval(差异确认)                     |
-| IT 工单流转    | router(P-7 分诊) → approval → event(用户确认解决) → 满意度调查      |
-| 印章/证照借用  | approval 双人复核 + P-11(归还到期提醒) + P-15 审计                  |
+| 场景           | 核心组合                                                       |
+| -------------- | -------------------------------------------------------------- |
+| 请假/加班/出差 | P-3 + 日历 http 集成 + P-11 到期提醒                           |
+| 报销与发票核验 | loop(逐张发票) → http(税局验真) → join → approval → 打款       |
+| 采购到付款 P2P | subworkflow(询价/比价/合同/收货/对账) 五段式 P-4               |
+| 合同审批与续签 | P-3 多方会签 + P-11(到期前 30 天提醒续签)                      |
+| 预算申请与管控 | approval + Update(P-13 运行中调整预算额度)                     |
+| 绩效考核周期   | P-12 Cron 启动 → loop(全员) → subworkflow(个人考核) → 汇总     |
+| 培训与认证到期 | P-11 定时唤醒 → condition(是否已续证) → 分级 notification      |
+| 资产盘点       | P-12 Cron → loop(资产清单) → approval(差异确认)                |
+| IT 工单流转    | router(P-7 分诊) → approval → event(用户确认解决) → 满意度调查 |
+| 印章/证照借用  | approval 双人复核 + P-11(归还到期提醒) + P-15 审计             |
 
 ---
 
@@ -514,17 +515,17 @@ P-12 Cron(工作时间窗口) → approval(演练负责人确认)
 
 #### 4.4 其他 DevOps 场景
 
-| 场景             | 核心组合                                                          |
-| ---------------- | ----------------------------------------------------------------- |
-| 基础设施供给     | approval(成本审批) → http(Terraform) → join(多资源) → 注册 CMDB   |
-| 证书/密钥轮换    | P-11(到期前 30 天) → http(签发) → loop(分发各节点) → 验证 → 回收  |
-| 数据库变更 DDL   | approval(DBA) → 备份 → 执行 → 验证 → rollback(失败回滚)  P-1      |
-| 容量巡检与扩缩容 | P-12 Cron → analytics → condition(阈值) → http(扩容) → 通知       |
-| 依赖漏洞治理     | P-12 Cron → http(扫描) → loop(逐个漏洞) → router(按严重度建单)    |
-| 值班排班与升级   | P-11 定时 → notification 未响应 → 升级下一级 oncall               |
-| 备份与恢复演练   | P-12 Cron 备份 + 定期 approval + 恢复验证子流程 P-4               |
-| 多环境配置同步   | fanout(各环境) → join → 差异 transform → approval → 应用          |
-| 成本优化巡检     | P-12 Cron → sql(费用) → router(按浪费类型) → approval → 执行清理  |
+| 场景             | 核心组合                                                         |
+| ---------------- | ---------------------------------------------------------------- |
+| 基础设施供给     | approval(成本审批) → http(Terraform) → join(多资源) → 注册 CMDB  |
+| 证书/密钥轮换    | P-11(到期前 30 天) → http(签发) → loop(分发各节点) → 验证 → 回收 |
+| 数据库变更 DDL   | approval(DBA) → 备份 → 执行 → 验证 → rollback(失败回滚) P-1      |
+| 容量巡检与扩缩容 | P-12 Cron → analytics → condition(阈值) → http(扩容) → 通知      |
+| 依赖漏洞治理     | P-12 Cron → http(扫描) → loop(逐个漏洞) → router(按严重度建单)   |
+| 值班排班与升级   | P-11 定时 → notification 未响应 → 升级下一级 oncall              |
+| 备份与恢复演练   | P-12 Cron 备份 + 定期 approval + 恢复验证子流程 P-4              |
+| 多环境配置同步   | fanout(各环境) → join → 差异 transform → approval → 应用         |
+| 成本优化巡检     | P-12 Cron → sql(费用) → router(按浪费类型) → approval → 执行清理 |
 
 ---
 
@@ -557,15 +558,15 @@ queue(consume: "cdc-events") → P-10 幂等去重 → router(按表分流)
 
 #### 5.3 其他数据场景
 
-| 场景             | 核心组合                                                        |
-| ---------------- | --------------------------------------------------------------- |
-| 数据质量监控     | P-12 Cron → loop(规则集) → join → 异常 notification + SLA 上报  |
-| 报表生成与分发   | P-12 Cron → sql → transform → http(渲染) → loop(多渠道分发)     |
-| 数据归档与清理   | P-12 Cron → sql(筛冷数据) → 归档 → 校验 → 删除(approval 保护)   |
-| 主数据治理 MDM   | 多源 fanout → join → transform(合并存活规则) → approval(冲突)   |
-| 埋点数据回补     | Cron backfill(补跑历史区间) + loop 分片                         |
-| 机器学习特征生产 | 依赖 DAG 用 join 表达 + 版本化输出                              |
-| 数据血缘同步     | Hook(P-15) → 每次节点完成推送血缘到元数据平台                   |
+| 场景             | 核心组合                                                       |
+| ---------------- | -------------------------------------------------------------- |
+| 数据质量监控     | P-12 Cron → loop(规则集) → join → 异常 notification + SLA 上报 |
+| 报表生成与分发   | P-12 Cron → sql → transform → http(渲染) → loop(多渠道分发)    |
+| 数据归档与清理   | P-12 Cron → sql(筛冷数据) → 归档 → 校验 → 删除(approval 保护)  |
+| 主数据治理 MDM   | 多源 fanout → join → transform(合并存活规则) → approval(冲突)  |
+| 埋点数据回补     | Cron backfill(补跑历史区间) + loop 分片                        |
+| 机器学习特征生产 | 依赖 DAG 用 join 表达 + 版本化输出                             |
+| 数据血缘同步     | Hook(P-15) → 每次节点完成推送血缘到元数据平台                  |
 
 ---
 
@@ -603,6 +604,7 @@ router(意图识别, 分诊到专家 Agent)                           [P-7]
 ```
 
 **关键点**：
+
 - `loop` 的 `MAX_LOOP_ITERATIONS` 天然是 **Agent 失控的保险丝**；
 - **危险工具（删数据、发邮件、付款）前置 `approval`**，这是 AI Agent 落地的核心安全设计；
 - `subworkflow` 让每个 Agent 成为可独立测试、可复用的资产。
@@ -623,11 +625,11 @@ sql(取待生成列表) → loop(parallel, maxConcurrency: 3)        [P-6 保护
 | 场景                | 核心组合                                                             |
 | ------------------- | -------------------------------------------------------------------- |
 | Prompt A/B 评测     | fanout(多个 Prompt 变体) → join → transform(对比打分) → 报告         |
-| 模型训练任务编排    | 长任务 heartbeat 心跳 + taskQueue 专用 worker + P-11 结果轮询         |
-| 文档智能处理 IDP    | http(OCR) → loop(逐页) → http(抽取) → join → approval(低置信人工校) |
+| 模型训练任务编排    | 长任务 heartbeat 心跳 + taskQueue 专用 worker + P-11 结果轮询        |
+| 文档智能处理 IDP    | http(OCR) → loop(逐页) → http(抽取) → join → approval(低置信人工校)  |
 | AI 客服升级人工     | loop(对话轮次) → condition(情绪/失败次数) → event(转人工) → approval |
 | 数据标注众包        | loop(任务分发) → approval(多人标注) → join(all) → transform(一致性)  |
-| 模型上线灰度        | 同 4.1 发布流水线 + analytics 指标对比 + 自动 rollback                |
+| 模型上线灰度        | 同 4.1 发布流水线 + analytics 指标对比 + 自动 rollback               |
 | Embedding 增量更新  | CDC queue → loop 批量 → http(向量化) → sql(写入)                     |
 | AI 生成内容合规留痕 | P-15 Hook 全链路 + 归档（应对 AI 监管要求）                          |
 
@@ -635,16 +637,16 @@ sql(取待生成列表) → loop(parallel, maxConcurrency: 3)        [P-6 保护
 
 ### 7. 内容、媒体与创作
 
-| 场景             | 核心组合                                                               |
-| ---------------- | ---------------------------------------------------------------------- |
-| 视频转码分发     | 上传 event → fanout(多码率转码, taskQueue 专用 worker) → join → CDN 推送 |
-| 内容审核多级     | http(机审) → router(置信度) → approval(人审) → approval(复审) → 发布   |
-| 稿件采编发       | approval(编辑) → approval(主编) → P-11(定时发布) → 多渠道 loop 分发    |
-| 媒资批量水印     | loop(parallel) + Worker 线程池卸载 CPU 密集处理                        |
-| 直播流程编排     | event(开播) → 定时巡检 P-12 → event(下播) → 转录/切片/归档子流程       |
-| 多语言本地化     | loop(语种) → http(翻译) → approval(母语校对) → join → 发布             |
-| 版权侵权监测     | P-12 Cron → loop(全网扫描) → condition(相似度) → 取证 → approval(维权) |
-| 评论/UGC 治理    | queue(consume) → 机审 → router → approval → 处置 + 申诉子流程          |
+| 场景          | 核心组合                                                                 |
+| ------------- | ------------------------------------------------------------------------ |
+| 视频转码分发  | 上传 event → fanout(多码率转码, taskQueue 专用 worker) → join → CDN 推送 |
+| 内容审核多级  | http(机审) → router(置信度) → approval(人审) → approval(复审) → 发布     |
+| 稿件采编发    | approval(编辑) → approval(主编) → P-11(定时发布) → 多渠道 loop 分发      |
+| 媒资批量水印  | loop(parallel) + Worker 线程池卸载 CPU 密集处理                          |
+| 直播流程编排  | event(开播) → 定时巡检 P-12 → event(下播) → 转录/切片/归档子流程         |
+| 多语言本地化  | loop(语种) → http(翻译) → approval(母语校对) → join → 发布               |
+| 版权侵权监测  | P-12 Cron → loop(全网扫描) → condition(相似度) → 取证 → approval(维权)   |
+| 评论/UGC 治理 | queue(consume) → 机审 → router → approval → 处置 + 申诉子流程            |
 
 ---
 
@@ -665,16 +667,16 @@ event(user.registered) → notification(欢迎)
 
 #### 8.2 其他增长场景
 
-| 场景               | 核心组合                                                          |
-| ------------------ | ----------------------------------------------------------------- |
-| 线索评分与分派 MQL | 多源 fanout 富化 → join → transform(评分) → router(分派销售)      |
-| 销售机会推进       | 阶段 event 驱动 P-5 + 停滞 P-11 提醒 + approval(折扣审批)         |
-| 流失预警挽回       | P-12 Cron → sql(行为指标) → router(流失风险等级) → 分级触达       |
-| NPS 调研闭环       | P-11 触发 → notification(问卷) → event(回收) → router(差评→工单)  |
-| 精准营销活动       | loop(人群批量) + maxConcurrency 保护 + 多渠道 notification         |
-| 续费与催缴         | P-11(到期前 30/7/1 天) 三级提醒 → condition(已续?) → 降级/停服    |
-| 推荐奖励发放       | event(好友注册) → 幂等 P-10 → sql(发奖) → 风控 condition 防刷     |
-| 客户 360 视图同步  | Hook P-15 → 各系统事件 → transform 归一 → sql(CDP 写入)           |
+| 场景               | 核心组合                                                         |
+| ------------------ | ---------------------------------------------------------------- |
+| 线索评分与分派 MQL | 多源 fanout 富化 → join → transform(评分) → router(分派销售)     |
+| 销售机会推进       | 阶段 event 驱动 P-5 + 停滞 P-11 提醒 + approval(折扣审批)        |
+| 流失预警挽回       | P-12 Cron → sql(行为指标) → router(流失风险等级) → 分级触达      |
+| NPS 调研闭环       | P-11 触发 → notification(问卷) → event(回收) → router(差评→工单) |
+| 精准营销活动       | loop(人群批量) + maxConcurrency 保护 + 多渠道 notification       |
+| 续费与催缴         | P-11(到期前 30/7/1 天) 三级提醒 → condition(已续?) → 降级/停服   |
+| 推荐奖励发放       | event(好友注册) → 幂等 P-10 → sql(发奖) → 风控 condition 防刷    |
+| 客户 360 视图同步  | Hook P-15 → 各系统事件 → transform 归一 → sql(CDP 写入)          |
 
 ---
 
@@ -696,18 +698,18 @@ event(user.registered) → notification(欢迎)
 
 ### 10. 医疗、教育与公共服务
 
-| 场景             | 核心组合                                                              |
-| ---------------- | --------------------------------------------------------------------- |
-| 预约挂号与提醒   | 预约 → P-11(就诊前 1 天/1 小时) → notification → event(到院签到)      |
-| 转诊与会诊       | approval(多科室会签 join all) + P-15 全程审计留痕                     |
-| 处方审核         | http(合理用药引擎) → condition → approval(药师) → 发药                |
-| 随访计划         | P-11 多时点唤醒 → notification(问卷) → event(回收) → router(异常转诊) |
-| 临床试验流程     | 严格 P-15 审计 + approval 多级 + 归档合规留存                         |
-| 学生选课与排课   | loop(志愿轮次) + condition(容量) + router(调剂)                       |
-| 作业批改与反馈   | loop(逐份) → http(AI 初评) → approval(教师复核) → notification(家长)  |
-| 考试成绩发布     | P-12 定时 → sql(统计) → approval(教务确认) → 多渠道发布               |
-| 政务事项办理     | router(事项分诊) → 多部门 join 并联审批 → P-11 办结时限预警           |
-| 证照到期换发     | P-11(到期前 90/30/7 天) 三级提醒 → 在线办理子流程                     |
+| 场景           | 核心组合                                                              |
+| -------------- | --------------------------------------------------------------------- |
+| 预约挂号与提醒 | 预约 → P-11(就诊前 1 天/1 小时) → notification → event(到院签到)      |
+| 转诊与会诊     | approval(多科室会签 join all) + P-15 全程审计留痕                     |
+| 处方审核       | http(合理用药引擎) → condition → approval(药师) → 发药                |
+| 随访计划       | P-11 多时点唤醒 → notification(问卷) → event(回收) → router(异常转诊) |
+| 临床试验流程   | 严格 P-15 审计 + approval 多级 + 归档合规留存                         |
+| 学生选课与排课 | loop(志愿轮次) + condition(容量) + router(调剂)                       |
+| 作业批改与反馈 | loop(逐份) → http(AI 初评) → approval(教师复核) → notification(家长)  |
+| 考试成绩发布   | P-12 定时 → sql(统计) → approval(教务确认) → 多渠道发布               |
+| 政务事项办理   | router(事项分诊) → 多部门 join 并联审批 → P-11 办结时限预警           |
+| 证照到期换发   | P-11(到期前 90/30/7 天) 三级提醒 → 在线办理子流程                     |
 
 ---
 
@@ -715,29 +717,29 @@ event(user.registered) → notification(欢迎)
 
 > 把引擎用在**自己的产品**上——这是最容易被忽略、但 ROI 最高的一类场景。
 
-| 场景             | 核心组合                                                                |
-| ---------------- | ----------------------------------------------------------------------- |
-| 租户开通与初始化 | fanout(建库/建账号/初始化配置/发欢迎邮件) → join(all) → 失败进 DLQ      |
-| 订阅计费周期     | P-12 月结 Cron → loop(租户) → transform(算量) → http(扣款) → P-8 重试   |
-| 用量超限处置     | P-12 Cron → sql(用量) → router(提醒/限流/停服) → notification           |
-| 试用转付费       | P-11(试用到期前) → notification → condition(已付费?) → 降级/回收资源    |
-| 租户数据导出     | approval(合规确认) → 长任务 heartbeat → 分片 loop → 通知下载            |
-| 租户注销与数据删除 | approval(双人) → P-11(冷静期 30 天) → event(确认) → 级联删除 → 审计     |
-| 功能灰度发布     | workflow-versions 版本化 + router(按租户分流) + analytics 对比          |
-| SLA 违约赔付     | analytics(/sla) → condition(违约?) → transform(算赔付) → approval → 打款 |
+| 场景               | 核心组合                                                                 |
+| ------------------ | ------------------------------------------------------------------------ |
+| 租户开通与初始化   | fanout(建库/建账号/初始化配置/发欢迎邮件) → join(all) → 失败进 DLQ       |
+| 订阅计费周期       | P-12 月结 Cron → loop(租户) → transform(算量) → http(扣款) → P-8 重试    |
+| 用量超限处置       | P-12 Cron → sql(用量) → router(提醒/限流/停服) → notification            |
+| 试用转付费         | P-11(试用到期前) → notification → condition(已付费?) → 降级/回收资源     |
+| 租户数据导出       | approval(合规确认) → 长任务 heartbeat → 分片 loop → 通知下载             |
+| 租户注销与数据删除 | approval(双人) → P-11(冷静期 30 天) → event(确认) → 级联删除 → 审计      |
+| 功能灰度发布       | workflow-versions 版本化 + router(按租户分流) + analytics 对比           |
+| SLA 违约赔付       | analytics(/sla) → condition(违约?) → transform(算赔付) → approval → 打款 |
 
 ---
 
 ### 12. IoT 与边缘协同
 
-| 场景             | 核心组合                                                             |
-| ---------------- | -------------------------------------------------------------------- |
-| 设备注册与激活   | event(设备上线) → http(鉴权) → sql(建档) → notification              |
-| 遥测异常处置     | queue(consume 遥测) → condition(阈值) → router(分级) → 自愈/告警     |
-| OTA 固件升级     | approval(发布) → loop(分批灰度, maxConcurrency) → join → 失败回滚 P-1 |
-| 设备指令下发     | http(下发) → event(设备 ACK) → 超时 P-8 重试 → DLQ                   |
-| 边缘-云协同批处理 | 边缘 queue 上报 → 云端 loop 聚合 → transform → 回传配置              |
-| 能耗优化调度     | P-12 Cron(分时电价) → sql(负载) → transform(策略) → loop(下发设备)   |
+| 场景              | 核心组合                                                              |
+| ----------------- | --------------------------------------------------------------------- |
+| 设备注册与激活    | event(设备上线) → http(鉴权) → sql(建档) → notification               |
+| 遥测异常处置      | queue(consume 遥测) → condition(阈值) → router(分级) → 自愈/告警      |
+| OTA 固件升级      | approval(发布) → loop(分批灰度, maxConcurrency) → join → 失败回滚 P-1 |
+| 设备指令下发      | http(下发) → event(设备 ACK) → 超时 P-8 重试 → DLQ                    |
+| 边缘-云协同批处理 | 边缘 queue 上报 → 云端 loop 聚合 → transform → 回传配置               |
+| 能耗优化调度      | P-12 Cron(分时电价) → sql(负载) → transform(策略) → loop(下发设备)    |
 
 ---
 
@@ -745,20 +747,20 @@ event(user.registered) → notification(欢迎)
 
 不分行业、几乎每个系统都需要的横切流程：
 
-| 场景                | 核心组合                                                                |
-| ------------------- | ----------------------------------------------------------------------- |
-| **通用审批中台**    | P-16 纯 JSON + P-7 路由 + P-3 审批，业务方只配 JSON 不写代码            |
-| **通知编排中心**    | router(按用户偏好/时区/渠道可达性) → 多渠道降级(Slack→邮件→短信)        |
-| **对账中心**        | P-12 Cron + fanout(多方数据) + join + loop 逐笔 + 差异 approval         |
-| **数据同步中台**    | CDC queue + P-10 幂等 + P-8 容错 + DLQ 兜底                             |
-| **定时任务平台**    | Cron + Jitter + Backfill + 失败告警 + 执行历史 analytics                |
-| **Webhook 网关**    | 接收 → P-10 去重 → router(按事件类型分发) → 下游 subworkflow            |
-| **重试与死信中心**  | 统一 DLQ + REST 批量重试 + 运营看板                                     |
-| **合规审计流水线**  | P-15 Hook 全量采集 + 归档 + 保留周期策略                                |
-| **配置变更管控**    | approval(双人复核) → 灰度 → 观察 wait → 自动 rollback                   |
-| **压测与容量规划**  | loop(阶梯加压) + analytics 采集 + condition(拐点检测)                   |
-| **流程健康度巡检**  | P-12 Cron → analytics(/anomalies) → 长时间卡住实例 → 告警/自动 cancel   |
-| **多租户批量运维**  | loop(租户列表) + subworkflow(单租户操作) + join 汇总报告                |
+| 场景               | 核心组合                                                              |
+| ------------------ | --------------------------------------------------------------------- |
+| **通用审批中台**   | P-16 纯 JSON + P-7 路由 + P-3 审批，业务方只配 JSON 不写代码          |
+| **通知编排中心**   | router(按用户偏好/时区/渠道可达性) → 多渠道降级(Slack→邮件→短信)      |
+| **对账中心**       | P-12 Cron + fanout(多方数据) + join + loop 逐笔 + 差异 approval       |
+| **数据同步中台**   | CDC queue + P-10 幂等 + P-8 容错 + DLQ 兜底                           |
+| **定时任务平台**   | Cron + Jitter + Backfill + 失败告警 + 执行历史 analytics              |
+| **Webhook 网关**   | 接收 → P-10 去重 → router(按事件类型分发) → 下游 subworkflow          |
+| **重试与死信中心** | 统一 DLQ + REST 批量重试 + 运营看板                                   |
+| **合规审计流水线** | P-15 Hook 全量采集 + 归档 + 保留周期策略                              |
+| **配置变更管控**   | approval(双人复核) → 灰度 → 观察 wait → 自动 rollback                 |
+| **压测与容量规划** | loop(阶梯加压) + analytics 采集 + condition(拐点检测)                 |
+| **流程健康度巡检** | P-12 Cron → analytics(/anomalies) → 长时间卡住实例 → 告警/自动 cancel |
+| **多租户批量运维** | loop(租户列表) + subworkflow(单租户操作) + join 汇总报告              |
 
 ---
 
@@ -768,13 +770,13 @@ event(user.registered) → notification(欢迎)
 
 ### 5.1 明确不支持
 
-| 需求                          | 为什么不行                                   | 替代方案                                |
-| ----------------------------- | -------------------------------------------- | --------------------------------------- |
-| 多副本水平扩展、集群调度      | 单进程，无分布式锁，`STORAGE_DIR` 独占       | 完整版 ts-runit / Temporal / Cadence    |
-| 准时触发的长延时 / 进程可能长期不在线 | `wait` 已能跨重启续等，但不会在进程外计时，触发时刻取决于何时恢复 | **P-11 外部定时唤醒**（准时性场景） |
-| 高吞吐（万级 TPS）流程        | 本地文件存储 + 单进程                        | 数据库后端 + 集群方案                   |
-| 强事务 ACID 跨库              | 无分布式事务                                 | **P-1 Saga 补偿**                       |
-| 跨机房容灾自动切换            | 无复制能力                                   | 外部存储复制 + 冷备                     |
+| 需求                                  | 为什么不行                                                        | 替代方案                             |
+| ------------------------------------- | ----------------------------------------------------------------- | ------------------------------------ |
+| 多副本水平扩展、集群调度              | 单进程，无分布式锁，`STORAGE_DIR` 独占                            | 完整版 ts-runit / Temporal / Cadence |
+| 准时触发的长延时 / 进程可能长期不在线 | `wait` 已能跨重启续等，但不会在进程外计时，触发时刻取决于何时恢复 | **P-11 外部定时唤醒**（准时性场景）  |
+| 高吞吐（万级 TPS）流程                | 本地文件存储 + 单进程                                             | 数据库后端 + 集群方案                |
+| 强事务 ACID 跨库                      | 无分布式事务                                                      | **P-1 Saga 补偿**                    |
+| 跨机房容灾自动切换                    | 无复制能力                                                        | 外部存储复制 + 冷备                  |
 
 ### 5.2 场景适配度自检清单
 
@@ -806,25 +808,25 @@ event(user.registered) → notification(欢迎)
 
 按"我想解决什么问题"反向查找模式：
 
-| 我的问题                     | 用哪个模式          | 典型场景参考          |
-| ---------------------------- | ------------------- | --------------------- |
-| 跨系统操作要么全成功要么回滚 | P-1 Saga            | 1.1 订单、2.4 资金归集 |
-| 太慢了，想并行加速           | P-2 扇出汇聚        | 2.1 KYC、3.2 入职      |
-| 需要人工审批卡点             | P-3 人在回路        | 3.1 审批、4.1 发布     |
-| 流程太长想拆分复用           | P-4 子流程          | 3.4 P2P、6.2 Agent     |
-| 业务对象生命周期跨越数天     | P-5 事件驱动        | 1.1 订单、9 运单       |
-| 要批量处理一堆数据           | P-6 批量迭代        | 5.1 ETL、6.3 内容生成  |
-| 要按条件分诊到不同处理       | P-7 多级路由        | 2.3 风控、4.2 告警     |
-| 外部 API 不稳定              | P-8 三级容错        | 2.2 支付、12 指令下发  |
-| 要给依赖设软超时             | P-9 竞速兜底        | 2.3 反欺诈             |
-| 消息会重复投递               | P-10 幂等消费       | 5.2 CDC、8 推荐奖励    |
+| 我的问题                         | 用哪个模式            | 典型场景参考           |
+| -------------------------------- | --------------------- | ---------------------- |
+| 跨系统操作要么全成功要么回滚     | P-1 Saga              | 1.1 订单、2.4 资金归集 |
+| 太慢了，想并行加速               | P-2 扇出汇聚          | 2.1 KYC、3.2 入职      |
+| 需要人工审批卡点                 | P-3 人在回路          | 3.1 审批、4.1 发布     |
+| 流程太长想拆分复用               | P-4 子流程            | 3.4 P2P、6.2 Agent     |
+| 业务对象生命周期跨越数天         | P-5 事件驱动          | 1.1 订单、9 运单       |
+| 要批量处理一堆数据               | P-6 批量迭代          | 5.1 ETL、6.3 内容生成  |
+| 要按条件分诊到不同处理           | P-7 多级路由          | 2.3 风控、4.2 告警     |
+| 外部 API 不稳定                  | P-8 三级容错          | 2.2 支付、12 指令下发  |
+| 要给依赖设软超时                 | P-9 竞速兜底          | 2.3 反欺诈             |
+| 消息会重复投递                   | P-10 幂等消费         | 5.2 CDC、8 推荐奖励    |
 | **要等几天后再继续（到期即可）** | **durable `wait`** ⭐ | 1.2 超时取消、8.1 旅程 |
-| **要等几天后再继续（必须准时）** | **P-11 外部唤醒** ⭐ | 定时发布、SLA 时限     |
-| 要定时跑、要补跑历史         | P-12 Cron+Backfill  | 5.1 数据管道、11 计费  |
-| 运行中要改参数/看进度        | P-13 Signal/Update  | 8.1 旅程、11 用量      |
-| 出事故要能止血               | P-14 熔断灰度       | 4.1 发布、11 灰度      |
-| 监管要求全程可追溯           | P-15 审计归档       | 2 金融、10 医疗        |
-| 想让业务自助配流程           | **P-16 纯 JSON** ⭐  | 3 企业流程、四 中台    |
+| **要等几天后再继续（必须准时）** | **P-11 外部唤醒** ⭐  | 定时发布、SLA 时限     |
+| 要定时跑、要补跑历史             | P-12 Cron+Backfill    | 5.1 数据管道、11 计费  |
+| 运行中要改参数/看进度            | P-13 Signal/Update    | 8.1 旅程、11 用量      |
+| 出事故要能止血                   | P-14 熔断灰度         | 4.1 发布、11 灰度      |
+| 监管要求全程可追溯               | P-15 审计归档         | 2 金融、10 医疗        |
+| 想让业务自助配流程               | **P-16 纯 JSON** ⭐   | 3 企业流程、四 中台    |
 
 ---
 

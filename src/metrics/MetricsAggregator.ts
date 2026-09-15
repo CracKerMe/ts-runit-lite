@@ -1,4 +1,5 @@
 import type { NodeMetrics, StorageProvider } from "../storage/StorageProvider";
+import { mapWithConcurrency } from "../utils/concurrency";
 import { errorStack, Logger } from "../utils/Logger";
 
 /**
@@ -53,8 +54,62 @@ export interface TimeSeriesDataPoint {
  * MetricsAggregator provides functionality to aggregate and analyze
  * workflow execution metrics across different dimensions
  */
+/**
+ * Page size used when walking the full instance set for aggregation.
+ * `queryInstances` defaults to 50 when no pagination is supplied, which would
+ * silently compute every metric from at most 50 instances.
+ */
+const AGGREGATION_PAGE_SIZE = 500;
+
+/**
+ * Hard cap on instances pulled into a single aggregation, so a huge dataset
+ * degrades into an approximation rather than exhausting memory.
+ */
+const AGGREGATION_MAX_INSTANCES = 100_000;
+
 export class MetricsAggregator {
   constructor(private storage: StorageProvider) {}
+
+  /**
+   * Load every instance matching the filter by walking pages.
+   *
+   * Callers MUST use this rather than a bare `queryInstances(...)`: omitting
+   * pagination does not mean "all rows", it means the default page of 50.
+   */
+  private async queryAllInstances(filter: {
+    workflowId?: string;
+    startTime?: number;
+    endTime?: number;
+  }): Promise<Array<{ instanceId: string }>> {
+    const collected: Array<{ instanceId: string }> = [];
+
+    for (let page = 1; ; page++) {
+      const { instances, total } = await this.storage.queryInstances({
+        ...filter,
+        page,
+        pageSize: AGGREGATION_PAGE_SIZE,
+        // Stable ordering so paging cannot duplicate or skip rows.
+        sortBy: "createdAt",
+        sortOrder: "asc",
+      });
+
+      collected.push(...instances);
+
+      if (instances.length < AGGREGATION_PAGE_SIZE) break;
+      if (collected.length >= total) break;
+      if (collected.length >= AGGREGATION_MAX_INSTANCES) {
+        Logger.warn(
+          "system",
+          "metrics",
+          "Aggregation truncated at instance cap; results are approximate",
+          { cap: AGGREGATION_MAX_INSTANCES, total },
+        );
+        break;
+      }
+    }
+
+    return collected;
+  }
 
   /**
    * Aggregate metrics by specified dimension
@@ -64,7 +119,7 @@ export class MetricsAggregator {
   ): Promise<AggregatedMetrics[]> {
     try {
       // Get all instances to aggregate their metrics
-      const instancesResult = await this.storage.queryInstances({
+      const allInstances = await this.queryAllInstances({
         workflowId: query.workflowId,
         startTime: query.startTime,
         endTime: query.endTime,
@@ -78,11 +133,14 @@ export class MetricsAggregator {
         }
       >();
 
+      // Load metrics with bounded concurrency rather than one serial await
+      // per instance.
+      const loadedMetrics = await mapWithConcurrency(allInstances, (instance) =>
+        this.storage.loadInstanceMetrics(instance.instanceId),
+      );
+
       // Collect metrics from all instances
-      for (const instance of instancesResult.instances) {
-        const metrics = await this.storage.loadInstanceMetrics(
-          instance.instanceId,
-        );
+      for (const metrics of loadedMetrics) {
         if (!metrics) continue;
 
         for (const [nodeId, nodeMetrics] of Object.entries(
@@ -223,7 +281,7 @@ export class MetricsAggregator {
       const bucketSizeMs = this.getBucketSizeMs(query.bucketSize);
 
       // Get all instances in the time range
-      const instancesResult = await this.storage.queryInstances({
+      const allInstances = await this.queryAllInstances({
         workflowId: query.workflowId,
         startTime: query.startTime,
         endTime: query.endTime,
@@ -251,11 +309,14 @@ export class MetricsAggregator {
         });
       }
 
+      // Load metrics with bounded concurrency rather than one serial await
+      // per instance.
+      const loadedMetrics = await mapWithConcurrency(allInstances, (instance) =>
+        this.storage.loadInstanceMetrics(instance.instanceId),
+      );
+
       // Collect metrics from all instances
-      for (const instance of instancesResult.instances) {
-        const metrics = await this.storage.loadInstanceMetrics(
-          instance.instanceId,
-        );
+      for (const metrics of loadedMetrics) {
         if (!metrics) continue;
 
         for (const [nodeId, nodeMetrics] of Object.entries(

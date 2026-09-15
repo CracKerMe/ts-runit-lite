@@ -8,6 +8,8 @@ import type {
   HeartbeatState,
   InstanceMetrics,
   InstanceQueryParams,
+  InstanceSortField,
+  InstanceSortOrder,
   NodeMetrics,
   StorageProvider,
   StoredWorkflow,
@@ -455,6 +457,11 @@ export class MemoryStorage implements StorageProvider {
 
     const total = instances.length;
 
+    // Sort BEFORE pagination. Sorting a page after slicing produces duplicated
+    // and missing rows across pages, and Map insertion order is not a stable
+    // ordering to paginate against.
+    this.sortInstances(instances, params.sortBy, params.sortOrder);
+
     // Apply pagination
     const page = params.page ?? 1;
     const pageSize = params.pageSize ?? 50;
@@ -463,6 +470,33 @@ export class MemoryStorage implements StorageProvider {
     instances = instances.slice(start, end);
 
     return { instances: instances.map((i) => this.deepClone(i)), total };
+  }
+
+  /**
+   * 按指定字段稳定排序实例列表（原地排序）。
+   * instanceId 作为最终 tie-breaker，保证分页结果可重现。
+   */
+  private sortInstances(
+    instances: WorkflowInstance[],
+    sortBy: InstanceSortField = "createdAt",
+    sortOrder: InstanceSortOrder = "desc",
+  ): void {
+    const direction = sortOrder === "asc" ? 1 : -1;
+
+    instances.sort((a, b) => {
+      let cmp: number;
+      if (sortBy === "status") {
+        cmp = a.status.localeCompare(b.status);
+      } else if (sortBy === "updatedAt") {
+        cmp = this.toEpochMs(a.updatedAt) - this.toEpochMs(b.updatedAt);
+      } else {
+        cmp = this.toEpochMs(a.createdAt) - this.toEpochMs(b.createdAt);
+      }
+
+      if (cmp !== 0) return cmp * direction;
+      // Stable tie-breaker so equal keys keep a deterministic page order.
+      return a.instanceId.localeCompare(b.instanceId) * direction;
+    });
   }
 
   /**

@@ -44,6 +44,34 @@ export interface ApiServerConfig {
 }
 
 /**
+ * HTTP 层的关闭动作，按 Server 实例登记。
+ *
+ * 用 WeakMap 而非模块级单例，是为了支持同一进程内启动多个服务器
+ * （测试里就是这么用的），并且 Server 被回收时条目自动消失。
+ */
+const apiShutdownHooks = new WeakMap<Server, () => Promise<void>>();
+
+/**
+ * 关闭 API 服务器的 HTTP 资源：webhook 管理器、WebSocket 连接与监听套接字。
+ *
+ * 由调用方注册到 `GracefulShutdown` 的关闭链中，保证与引擎、worker 池、
+ * 存储等其他资源按统一顺序释放，而不是各自抢先 `process.exit()`。
+ * 对未由 `startApiServer` 创建的 Server 会退化为仅 `server.close()`。
+ */
+export async function closeApiServer(server: Server): Promise<void> {
+  const hook = apiShutdownHooks.get(server);
+  if (hook) {
+    apiShutdownHooks.delete(server);
+    await hook();
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    server.close(() => resolve());
+  });
+}
+
+/**
  * 启动 API 服务器
  */
 export async function startApiServer(
@@ -470,22 +498,27 @@ export async function startApiServer(
       }
     });
 
-    // Cleanup on shutdown — use .once to prevent listener accumulation
-    const sigtermHandler = () => {
-      Logger.info(
-        "system",
-        "api",
-        "SIGTERM received, shutting down gracefully",
-      );
+    // NOTE: deliberately no process signal handler here.
+    //
+    // `GracefulShutdown` (src/lifecycle.ts) already owns SIGTERM/SIGINT and
+    // runs the full ordered teardown (engine → worker pool → sandbox pool →
+    // scheduler → storage). A second handler here used to call
+    // `process.exit(0)` as soon as `server.close()` drained, killing the
+    // process while that chain was still mid-flight — worker threads unjoined
+    // and storage unflushed. It also never handled SIGINT at all.
+    //
+    // HTTP-side cleanup is exposed via `closeApiServer(server)` so the caller
+    // can register it as one ordered step of the single shutdown chain.
+    apiShutdownHooks.set(server, async () => {
       webhookManager.destroy();
       consoleWsManager.shutdown();
-      server.close(() => {
-        Logger.info("system", "api", "Server closed");
-        process.exit(0);
+      await new Promise<void>((resolve) => {
+        server.close(() => {
+          Logger.info("system", "api", "Server closed");
+          resolve();
+        });
       });
-    };
-    process.removeListener("SIGTERM", sigtermHandler);
-    process.once("SIGTERM", sigtermHandler);
+    });
 
     return server;
   } catch (error: unknown) {

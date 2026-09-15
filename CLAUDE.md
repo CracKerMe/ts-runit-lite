@@ -374,7 +374,7 @@ STORAGE_DIR=/var/lib/ts-runit-lite
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
 | [README.md](./README.md)                                           | 项目概述、快速开始                                                         |
 | [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md)                 | 15 种节点类型完整字段参考（AI Agent 友好，生成工作流 JSON 前建议先读这份） |
-| [docs/BUSINESS_SCENARIOS.md](./docs/BUSINESS_SCENARIOS.md)         | 多节点组合模式与行业业务场景全景图、能力边界与选型清单                    |
+| [docs/BUSINESS_SCENARIOS.md](./docs/BUSINESS_SCENARIOS.md)         | 多节点组合模式与行业业务场景全景图、能力边界与选型清单                     |
 | [src/demo/EXAMPLE_README.md](./src/demo/EXAMPLE_README.md)         | 示例工作流与 API 调用                                                      |
 | [src/engine/executors/README.md](./src/engine/executors/README.md) | HTTP、SQL、Queue 节点说明                                                  |
 | [.env.example](./.env.example)                                     | 环境变量配置                                                               |
