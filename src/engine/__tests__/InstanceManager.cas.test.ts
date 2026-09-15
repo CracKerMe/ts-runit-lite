@@ -97,6 +97,49 @@ describe("InstanceManager (CAS - Optimistic Concurrency Control)", () => {
       // Should have retried 3 times
       expect(storage.casUpdateInstance).toHaveBeenCalledTimes(3);
     });
+
+    it("should reconcile the in-memory cache to the last storage-confirmed version after exhausting retries, instead of leaving it ahead of storage", async () => {
+      const storedInstance = {
+        instanceId: "test_1",
+        workflowId: "test",
+        currentNodes: ["start"],
+        status: "pending",
+        context: {},
+        history: [],
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        version: 1,
+      };
+
+      const storage = {
+        saveInstance: vi.fn().mockResolvedValue(undefined),
+        casUpdateInstance: vi.fn().mockResolvedValue(false), // Always fail: never persists
+        // Every reload returns the same storage-confirmed state (a concurrent
+        // writer is winning every CAS round).
+        loadInstance: vi.fn().mockResolvedValue({ ...storedInstance }),
+        listInstances: vi.fn().mockResolvedValue([]),
+      } as any;
+
+      const mgr = new InstanceManager(storage);
+      const instance = await mgr.createInstance("wf", "start");
+      // Mutate the caller's local copy the way a node transition would.
+      instance.status = "running";
+      instance.context = { mutatedLocally: true };
+
+      await expect(mgr.updateInstance(instance)).rejects.toThrow(
+        "Failed to persist instance",
+      );
+
+      // The in-memory cache must reflect what storage last confirmed
+      // (status "pending", no mutatedLocally context) — not the mutated
+      // object that was never actually written through. Leaving the mutated
+      // object cached here would let every later read of this instance
+      // believe a write succeeded when storage disagrees.
+      const cached = mgr.getInstance(instance.instanceId);
+      expect(cached?.status).toBe("pending");
+      expect(cached?.context).not.toHaveProperty("mutatedLocally");
+      expect(cached?.version).toBe(1);
+    });
   });
 
   describe("concurrent update scenario", () => {

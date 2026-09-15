@@ -17,6 +17,18 @@ import type {
 
 export interface LocalFileStorageOptions {
   directory: string;
+  /**
+   * When true, fsync the temp file before rename and fsync the parent
+   * directory after rename, for every write. This protects against data
+   * loss on an abrupt host crash or power loss, not just a process restart.
+   *
+   * Default false: atomic rename alone already protects against ordinary
+   * process restarts (the OS page cache survives those), and fsync on every
+   * write materially slows down high-throughput node execution. Enable this
+   * for deployments that must survive host-level failures, at the cost of
+   * write latency.
+   */
+  fsyncOnWrite?: boolean;
 }
 
 type Collection =
@@ -39,10 +51,19 @@ type Collection =
  * recovery boundary: every mutation is written through a temp file and then
  * atomically renamed into place. This is intentionally not a distributed
  * store, but it protects workflow state from ordinary process restarts.
+ *
+ * By default writes are NOT fsync'd: the rename is atomic (readers never see
+ * a half-written file), but the bytes can still live only in the page cache
+ * until the OS flushes them, so an abrupt host crash or power loss can lose
+ * the most recent writes even though callers already observed them succeed.
+ * Pass `fsyncOnWrite: true` (or `FSYNC_ON_WRITE=true`, see AppConfig) to
+ * trade write latency for surviving host-level failures too.
  */
 export class LocalFileStorage extends MemoryStorage {
   readonly directory: string;
   private readonly directories: Record<Collection, string>;
+  private readonly fsyncOnWrite: boolean;
+  private readonly directoryFsyncQueues = new Map<string, Promise<void>>();
   private writeQueues = new Map<string, Promise<void>>();
   private deadLetterEntries = new Map<string, unknown>();
   private webhookEntries = new Map<string, unknown>();
@@ -52,6 +73,8 @@ export class LocalFileStorage extends MemoryStorage {
   constructor(options: LocalFileStorageOptions | string) {
     super();
     this.directory = typeof options === "string" ? options : options.directory;
+    this.fsyncOnWrite =
+      typeof options === "string" ? false : (options.fsyncOnWrite ?? false);
     this.directories = {
       instances: path.join(this.directory, "instances"),
       workflows: path.join(this.directory, "workflows"),
@@ -419,8 +442,33 @@ export class LocalFileStorage extends MemoryStorage {
       const temp = `${key}.${process.pid}.${Date.now()}.tmp`;
       // 不做缩进：每次节点流转都会整体重写实例文件，2 空格缩进会把
       // I/O 放大 2-3 倍而没有任何运行时收益（需要可读性时用 jq）。
-      await fs.promises.writeFile(temp, JSON.stringify(value), "utf8");
+      const contents = JSON.stringify(value);
+
+      if (!this.fsyncOnWrite) {
+        // 默认路径：不需要 fsync 时用 writeFile 一次性完成，不额外打开/
+        // 持有文件句柄，保持当前的写入开销不变。
+        await fs.promises.writeFile(temp, contents, "utf8");
+      } else {
+        // fsyncOnWrite 路径：需要一个打开的句柄才能在 rename 之前调用
+        // handle.sync()，把临时文件内容刷到磁盘——rename 的原子性只保证
+        // "看到新文件就是完整的"，不保证内容已经落盘，主机级崩溃/断电时
+        // 内容仍可能只停留在页缓存里。
+        const handle = await fs.promises.open(temp, "w");
+        try {
+          await handle.writeFile(contents, "utf8");
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+      }
+
       await fs.promises.rename(temp, key);
+
+      if (this.fsyncOnWrite) {
+        // rename 本身是目录元数据的变更，同样需要刷盘才能在断电后存活，
+        // 否则重启后可能看到旧文件、新文件，或目录项丢失。
+        await this.fsyncDirectory(path.dirname(key));
+      }
     };
     const previous = this.writeQueues.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(operation);
@@ -430,6 +478,34 @@ export class LocalFileStorage extends MemoryStorage {
     } finally {
       if (this.writeQueues.get(key) === current) {
         this.writeQueues.delete(key);
+      }
+    }
+  }
+
+  /**
+   * fsync a directory's metadata after a rename into it. Coalesces concurrent
+   * calls for the same directory into one fsync rather than one per write.
+   */
+  private async fsyncDirectory(directory: string): Promise<void> {
+    const pending = this.directoryFsyncQueues.get(directory);
+    if (pending) {
+      await pending;
+      return;
+    }
+    const operation = (async () => {
+      const handle = await fs.promises.open(directory, "r");
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+    })();
+    this.directoryFsyncQueues.set(directory, operation);
+    try {
+      await operation;
+    } finally {
+      if (this.directoryFsyncQueues.get(directory) === operation) {
+        this.directoryFsyncQueues.delete(directory);
       }
     }
   }

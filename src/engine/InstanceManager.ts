@@ -136,6 +136,7 @@ export class InstanceManager {
     if (this.storage) {
       let retries = maxRetries;
       let currentVersion = instance.version ?? 1;
+      let lastKnownGood: WorkflowInstance | undefined;
 
       while (retries-- > 0) {
         try {
@@ -160,7 +161,9 @@ export class InstanceManager {
             instance.instanceId,
           );
           if (freshInstance) {
-            // 使用最新的 version 作为下一次 CAS 的基准
+            // 使用最新的 version 作为下一次 CAS 的基准，并记录为"最后已知良好状态"——
+            // 如果重试最终耗尽，内存缓存要回退到这里，而不是停在本次失败、从未持久化的版本上
+            lastKnownGood = freshInstance;
             currentVersion = freshInstance.version ?? 1;
           }
         } catch (error) {
@@ -174,7 +177,14 @@ export class InstanceManager {
         }
       }
 
-      // 超过重试次数，记录错误但不抛出（防止任务卡住）
+      // 超过重试次数：内存中的 instance 对象从未成功持久化，必须把内存缓存
+      // 回退到存储侧最后一次确认过的版本，否则会与存储永久分叉（内存领先、
+      // 存储落后），后续基于内存状态做的判断都会是错的。
+      if (lastKnownGood) {
+        this.instances.set(instance.instanceId, lastKnownGood);
+        this.syncSearchIndex(lastKnownGood);
+      }
+
       Logger.error(
         instance.instanceId,
         "system",

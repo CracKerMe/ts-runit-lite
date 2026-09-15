@@ -171,6 +171,12 @@ const StorageConfigSchema = z.object({
     .min(1)
     .default(".ts-runit-data")
     .describe("Local file storage directory"),
+  fsyncOnWrite: z
+    .boolean()
+    .default(false)
+    .describe(
+      "fsync every write (temp file + parent directory) so state survives a host crash/power loss, not just a process restart. Off by default: materially slower under high node throughput.",
+    ),
 });
 
 // ── API Server Config ────────────────────────────────────────────────────────
@@ -327,6 +333,7 @@ export const AppConfigSchema = z.object({
   storage: StorageConfigSchema.default({
     type: "file",
     directory: ".ts-runit-data",
+    fsyncOnWrite: false,
   }),
   engine: WorkflowEngineConfigSchema,
   api: ApiServerConfigSchema,
@@ -421,6 +428,7 @@ function parseEnvToRawConfig(): Record<string, unknown> {
         | "memory"
         | "file",
       directory: process.env.STORAGE_DIR || ".ts-runit-data",
+      fsyncOnWrite: parseEnvBoolean(process.env.FSYNC_ON_WRITE, false),
     },
     engine: {
       logLevel: process.env.WORKFLOW_ENGINE_LOG_LEVEL || "INFO",

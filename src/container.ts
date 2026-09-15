@@ -45,6 +45,7 @@ export interface AppContainer {
 export async function createContainer(options?: {
   storageType?: "memory" | "file";
   storageDirectory?: string;
+  storageFsyncOnWrite?: boolean;
 }): Promise<AppContainer> {
   Logger.info("system", "container", "Creating application container...");
 
@@ -61,6 +62,7 @@ export async function createContainer(options?: {
   const storage = await createStorage({
     type: options?.storageType,
     directory: options?.storageDirectory,
+    fsyncOnWrite: options?.storageFsyncOnWrite,
   });
 
   // 创建事件总线

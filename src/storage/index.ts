@@ -28,6 +28,7 @@ import type { StorageProvider } from "./StorageProvider";
 export async function createStorage(options?: {
   type?: "memory" | "file";
   directory?: string;
+  fsyncOnWrite?: boolean;
 }): Promise<StorageProvider> {
   const type =
     options?.type ??
@@ -37,8 +38,14 @@ export async function createStorage(options?: {
   if (type === "file") {
     const directory =
       options?.directory ?? process.env.STORAGE_DIR ?? ".ts-runit-data";
-    Logger.info("system", "storage", `Using local file storage: ${directory}`);
-    const storage = new LocalFileStorage(directory);
+    const fsyncOnWrite =
+      options?.fsyncOnWrite ?? process.env.FSYNC_ON_WRITE === "true";
+    Logger.info(
+      "system",
+      "storage",
+      `Using local file storage: ${directory}${fsyncOnWrite ? " (fsync on write)" : ""}`,
+    );
+    const storage = new LocalFileStorage({ directory, fsyncOnWrite });
     await storage.connect();
     return storage;
   }

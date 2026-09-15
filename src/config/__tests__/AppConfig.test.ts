@@ -17,6 +17,7 @@ describe("AppConfigSchema", () => {
     expect(config.storage).toEqual({
       type: "file",
       directory: ".ts-runit-data",
+      fsyncOnWrite: false,
     });
     expect(config.archive).toEqual({
       enabled: false,
