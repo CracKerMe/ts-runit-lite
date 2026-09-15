@@ -593,6 +593,64 @@ class Tokenizer {
   }
 }
 
+// ── Token cache ────────────────────────────────────────────────────────────
+//
+// 工作流里的表达式是定义中的**静态字符串**，只有 context 在变：
+// 同一个条件边、router 分支或 loop 体每轮都会用同样的字符串重新求值。
+// 此前每次 evaluate() 都从头做字符级词法分析，是引擎侧最明显的重复计算。
+//
+// 只缓存 token，不缓存 AST：ExpressionParser 的构造函数接收 context 且
+// 解析与求值是交织的，并不产出可复用的纯 AST。token 层缓存安全且无侵入
+// ——解析器只按下标读取 tokens 并自己维护 position，既不改写数组也不
+// 改写 Token 对象（lambda 体用的是 slice()，同样是只读）。
+
+/** 表达式 token 缓存上限。动态拼接的表达式不会撑爆内存。 */
+const TOKEN_CACHE_MAX_SIZE = 2000;
+
+/** 超过该长度的表达式不入缓存，避免少数超长字符串占满容量。 */
+const TOKEN_CACHE_MAX_EXPRESSION_LENGTH = 4000;
+
+const tokenCache = new Map<string, Token[]>();
+
+/**
+ * 取得表达式的 token 序列，命中缓存则跳过整个词法分析。
+ *
+ * 返回的数组由所有调用方共享，**调用方不得修改**。
+ */
+function tokenizeCached(expression: string): Token[] {
+  if (expression.length > TOKEN_CACHE_MAX_EXPRESSION_LENGTH) {
+    return new Tokenizer(expression).tokenize();
+  }
+
+  const cached = tokenCache.get(expression);
+  if (cached) return cached;
+
+  const tokens = new Tokenizer(expression).tokenize();
+
+  // 简单的插入序淘汰即可：工作流表达式集合是有界且稳定的，
+  // 到达上限通常意味着调用方在动态拼接表达式。
+  if (tokenCache.size >= TOKEN_CACHE_MAX_SIZE) {
+    const oldest = tokenCache.keys().next().value;
+    if (oldest !== undefined) tokenCache.delete(oldest);
+  }
+  tokenCache.set(expression, tokens);
+
+  return tokens;
+}
+
+/** 清空 token 缓存。测试与内存诊断用。 */
+export function clearExpressionCache(): void {
+  tokenCache.clear();
+}
+
+/** token 缓存统计，用于监控。 */
+export function getExpressionCacheStats(): {
+  size: number;
+  maxSize: number;
+} {
+  return { size: tokenCache.size, maxSize: TOKEN_CACHE_MAX_SIZE };
+}
+
 /**
  * Expression parser using Shunting Yard algorithm
  */
@@ -1045,8 +1103,7 @@ export function evaluate(
 ): any {
   const startTime = Date.now();
   try {
-    const tokenizer = new Tokenizer(expression);
-    const tokens = tokenizer.tokenize();
+    const tokens = tokenizeCached(expression);
     const parser = new ExpressionParser(tokens, context);
     const result = parser.parse();
     if (traceEnabled) {
@@ -1151,8 +1208,7 @@ export function validateExpression(expression: string): {
     }
 
     // Try to tokenize and parse
-    const tokenizer = new Tokenizer(expression);
-    const tokens = tokenizer.tokenize();
+    const tokens = tokenizeCached(expression);
     // Validate by parsing with empty context — will throw on syntax errors
     const parser = new ExpressionParser(tokens, {});
     parser.parse();
@@ -1241,27 +1297,33 @@ export function resolveNodeOutput(
   return undefined;
 }
 
+/** 匹配 `${nodeId.output}` / `${nodeId.output.path}` */
+const NODE_OUTPUT_PATTERN = /\$\{(\w+)\.output(?:\.([\w.]+))?\}/g;
+
+/** 匹配普通上下文变量 `${variable}` / `${context.path}` */
+const CONTEXT_PATTERN = /\$\{([\w.]+)\}/g;
+
 /**
  * 替换字符串中的表达式占位符
  * 支持 ${variable}、${nodeId.output.path} 等
+ *
+ * 正则提到模块作用域：这两个函数在每个节点执行时都会被调用，
+ * 没必要每次重建带 lastIndex 状态的 RegExp 对象。
+ * （`String#replace` 会自行重置 lastIndex，因此共享 `g` 正则是安全的。）
  */
 export function interpolateExpressions(
   template: string,
   context: Record<string, any>,
   state?: { nodes?: Record<string, { output?: unknown }> },
 ): string {
-  // 匹配 ${nodeId.output} 或 ${nodeId.output.path}
-  const nodeOutputPattern = /\$\{(\w+)\.output(?:\.([\w.]+))?\}/g;
-
   // 先替换节点输出引用
-  let result = template.replace(nodeOutputPattern, (match, nodeId, path) => {
+  let result = template.replace(NODE_OUTPUT_PATTERN, (match, nodeId, path) => {
     const value = resolveNodeOutput(nodeId, path, state);
     return value !== undefined ? String(value) : match;
   });
 
   // 再替换普通上下文变量 ${variable} 或 ${context.path}
-  const contextPattern = /\$\{([\w.]+)\}/g;
-  result = result.replace(contextPattern, (match, path) => {
+  result = result.replace(CONTEXT_PATTERN, (match, path) => {
     // 跳过已经处理过的 output 引用
     if (path.includes(".output")) {
       return match;
@@ -1273,30 +1335,88 @@ export function interpolateExpressions(
   return result;
 }
 
+/** `interpolateObject` 的最大递归深度。 */
+export const MAX_INTERPOLATION_DEPTH = 100;
+
+/**
+ * 插值深度超限或检测到循环引用时抛出。
+ *
+ * 用具名错误类而非裸 Error，便于调用方 `instanceof` 判断，
+ * 与 WorkflowNotFoundError 等既有错误类保持一致。
+ */
+export class InterpolationDepthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "InterpolationDepthError";
+  }
+}
+
 /**
  * 解析对象中的所有表达式
  * 递归处理对象和数组
+ *
+ * 递归带深度上限与循环引用检测：自引用对象（例如 HTTP 节点的响应被回灌进
+ * context）此前会导致栈溢出——那是不可捕获的、直接终止进程的失败，而不是
+ * 一个能被节点错误处理接住的异常。
  */
 export function interpolateObject<T>(
   obj: T,
   context: Record<string, any>,
   state?: { nodes?: Record<string, { output?: unknown }> },
 ): T {
+  return interpolateObjectInternal(obj, context, state, 0, new WeakSet());
+}
+
+function interpolateObjectInternal<T>(
+  obj: T,
+  context: Record<string, any>,
+  state: { nodes?: Record<string, { output?: unknown }> } | undefined,
+  depth: number,
+  seen: WeakSet<object>,
+): T {
   if (typeof obj === "string") {
     return interpolateExpressions(obj, context, state) as T;
   }
 
-  if (Array.isArray(obj)) {
-    return obj.map((item) => interpolateObject(item, context, state)) as T;
+  if (obj === null || typeof obj !== "object") {
+    return obj;
   }
 
-  if (obj !== null && typeof obj === "object") {
+  if (depth >= MAX_INTERPOLATION_DEPTH) {
+    throw new InterpolationDepthError(
+      `Interpolation exceeded maximum depth of ${MAX_INTERPOLATION_DEPTH}; ` +
+        "the value is nested too deeply or contains a cycle",
+    );
+  }
+
+  if (seen.has(obj as object)) {
+    throw new InterpolationDepthError(
+      "Interpolation encountered a circular reference",
+    );
+  }
+  seen.add(obj as object);
+
+  try {
+    if (Array.isArray(obj)) {
+      return obj.map((item) =>
+        interpolateObjectInternal(item, context, state, depth + 1, seen),
+      ) as T;
+    }
+
     const result: Record<string, any> = {};
     for (const [key, value] of Object.entries(obj)) {
-      result[key] = interpolateObject(value, context, state);
+      result[key] = interpolateObjectInternal(
+        value,
+        context,
+        state,
+        depth + 1,
+        seen,
+      );
     }
     return result as T;
+  } finally {
+    // 出栈时移除：同一个对象在树中多处出现（DAG 形状）是合法的，
+    // 只有真正的环才应当报错。
+    seen.delete(obj as object);
   }
-
-  return obj;
 }

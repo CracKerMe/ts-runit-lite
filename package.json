@@ -52,6 +52,7 @@
     "dev:api": "cross-env START_API_SERVER=true tsx src/cli.ts",
     "start:api": "pnpm build && cross-env START_API_SERVER=true node dist/src/cli.js",
     "watch": "tsc -w",
+    "bench": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run --config vitest.bench.config.ts",
     "test": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run",
     "test:watch": "cross-env VITE_CJS_IGNORE_WARNING=true vitest",
     "test:coverage": "cross-env VITE_CJS_IGNORE_WARNING=true vitest run --coverage",

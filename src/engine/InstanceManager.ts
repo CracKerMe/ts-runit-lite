@@ -1,6 +1,7 @@
 // oxlint-disable no-explicit-any -- dynamic types used throughout this module
 import type { WorkflowInstance } from "../model/Instance";
 import type { StorageProvider } from "../storage/StorageProvider";
+import { mapWithConcurrency } from "../utils/concurrency";
 import { Logger } from "../utils/Logger";
 import { ConcurrencyConflictError } from "./errors";
 import { searchAttributeManager } from "./SearchAttributeManager";
@@ -223,15 +224,20 @@ export class InstanceManager {
 
     try {
       const instanceIds = await this.storage.listInstances();
-      for (const instanceId of instanceIds) {
-        const instance = await this.storage.loadInstance(instanceId);
-        if (instance) {
-          this.instances.set(instanceId, instance);
-          this.instanceCounter = Math.max(
-            this.instanceCounter,
-            this.extractSequence(instanceId) + 1,
-          );
-        }
+
+      // 以受限并发加载，替代逐个 await 的串行循环：
+      // 串行时启动延迟是 N × 单次读取往返。
+      const loaded = await mapWithConcurrency(instanceIds, (instanceId) =>
+        this.storage!.loadInstance(instanceId),
+      );
+
+      for (const instance of loaded) {
+        if (!instance) continue;
+        this.instances.set(instance.instanceId, instance);
+        this.instanceCounter = Math.max(
+          this.instanceCounter,
+          this.extractSequence(instance.instanceId) + 1,
+        );
       }
 
       Logger.info(

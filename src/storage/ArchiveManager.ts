@@ -15,6 +15,10 @@ import type { StorageProvider } from "./StorageProvider";
 export class ArchiveManager {
   private archiveDir: string;
   private storage?: StorageProvider;
+  /** 最近一次已确保存在的日期分区，避免每次归档都发起 mkdir。 */
+  private lastEnsuredDate: string | null = null;
+  /** 临时文件名去重计数器，防止同毫秒内的并发写互相覆盖。 */
+  private tempCounter = 0;
   private unsubscribe: Array<() => void> = [];
   private cleanupTimer?: NodeJS.Timeout;
   private readonly retentionDays: number;
@@ -92,11 +96,8 @@ export class ArchiveManager {
       }
 
       // 2. Archive to disk
-      const dateStr = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
-      const dailyDir = path.join(this.archiveDir, dateStr);
-      if (!fs.existsSync(dailyDir)) {
-        fs.mkdirSync(dailyDir, { recursive: true });
-      }
+      const dateStr = new Date().toISOString().split("T")[0]!; // YYYY-MM-DD
+      const dailyDir = await this.ensureDailyDir(dateStr);
 
       const filePath = path.join(dailyDir, `${instanceId}.json`);
       const archiveContent = {
@@ -178,13 +179,32 @@ export class ArchiveManager {
     return deleted;
   }
 
+  /**
+   * 确保当天的归档目录存在，并缓存最近一次创建的日期。
+   *
+   * 此前这里用的是 `fs.existsSync` + `fs.mkdirSync`：同步调用，
+   * 在每个终态实例的异步 hook 里阻塞事件循环两次系统调用，
+   * 而目录其实每天才变一次。
+   */
+  private async ensureDailyDir(dateStr: string): Promise<string> {
+    const dailyDir = path.join(this.archiveDir, dateStr);
+    if (this.lastEnsuredDate === dateStr) {
+      return dailyDir;
+    }
+
+    // recursive: true 在目录已存在时是 no-op，无需先 exists 判断
+    await fs.promises.mkdir(dailyDir, { recursive: true });
+    this.lastEnsuredDate = dateStr;
+    return dailyDir;
+  }
+
   private async writeAtomic(filePath: string, value: unknown): Promise<void> {
-    const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
-    await fs.promises.writeFile(
-      tempPath,
-      JSON.stringify(value, null, 2),
-      "utf8",
-    );
+    // 同一实例的两个终态事件（如 failed 与 cancelled）可能并发触发，
+    // 各自的临时文件必须互不冲突，否则会互相覆盖。
+    const tempPath = `${filePath}.${process.pid}.${Date.now()}.${this.tempCounter++}.tmp`;
+    // 不缩进：归档是冷数据，缩进只会放大 I/O 体积
+    // （与 LocalFileStorage 的写入策略保持一致）。
+    await fs.promises.writeFile(tempPath, JSON.stringify(value), "utf8");
     await fs.promises.rename(tempPath, filePath);
   }
 }

@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { WorkflowInstance } from "../model/Instance";
 import type { WorkflowDefinition } from "../model/Workflow";
+import { mapWithConcurrency } from "../utils/concurrency";
 import { Logger } from "../utils/Logger";
 import { MemoryStorage } from "./MemoryStorage";
 import type {
@@ -464,15 +465,35 @@ export class LocalFileStorage extends MemoryStorage {
     collection: Collection,
     restore: (id: string, value: unknown) => Promise<void>,
   ): Promise<void> {
-    for (const id of await this.listFiles(collection)) {
-      // 读取/解析失败才隔离——那是真正损坏的字节。
-      let value: unknown;
-      try {
-        value = JSON.parse(
-          await fs.promises.readFile(this.filePath(collection, id), "utf8"),
-        );
-      } catch (error) {
-        await this.quarantine(collection, id, error);
+    const ids = await this.listFiles(collection);
+
+    // 读取与解析以受限并发进行：此前是逐个 await readFile，启动延迟等于
+    // N × 系统调用往返，几万条记录时会让 connect() 卡上几分钟。
+    type ReadResult =
+      | { ok: true; id: string; value: unknown }
+      | { ok: false; id: string; error: unknown };
+
+    const results = await mapWithConcurrency<string, ReadResult>(
+      ids,
+      async (id) => {
+        try {
+          const value = JSON.parse(
+            await fs.promises.readFile(this.filePath(collection, id), "utf8"),
+          );
+          return { ok: true, id, value };
+        } catch (error) {
+          // 读取/解析失败才隔离——那是真正损坏的字节。
+          // 这里不直接隔离，留到串行阶段，避免并发 rename 互相干扰。
+          return { ok: false, id, error };
+        }
+      },
+    );
+
+    // 恢复本身保持串行：restore 回调会写入共享的内存索引，
+    // 并发执行会引入顺序依赖和竞态。
+    for (const result of results) {
+      if (!result.ok) {
+        await this.quarantine(collection, result.id, result.error);
         continue;
       }
 
@@ -480,12 +501,12 @@ export class LocalFileStorage extends MemoryStorage {
       // 一条完全合法的记录会被 rename 进 corrupt/ 而永久丢失。
       // 这里只记录并跳过，文件留在原地等修好的版本读取。
       try {
-        await restore(id, value);
+        await restore(result.id, result.value);
       } catch (error) {
         Logger.error(
           "system",
           "storage",
-          `Failed to restore ${collection} record ${id}; leaving the file in place`,
+          `Failed to restore ${collection} record ${result.id}; leaving the file in place`,
           error instanceof Error ? error.stack : String(error),
         );
       }

@@ -28,6 +28,23 @@ export class HeartbeatManager {
   private heartbeatOptions: Map<string, HeartbeatOptions> = new Map();
 
   /**
+   * 上次成功落盘的时间戳（按 key）。用于对心跳写入去抖。
+   *
+   * 心跳每 tick 都会写一次存储：走 LocalFileStorage 就是
+   * stringify → 临时文件 → rename（开 FSYNC_ON_WRITE 还要两次 fsync），
+   * 而每次唯一变化的只是一个时间戳。1 秒间隔 × 100 个并发节点
+   * 就是每秒 100 次全文件重写，按 key 的写队列只串行化不合并，
+   * 积压会持续增长。
+   *
+   * 心跳是恢复提示而非事务状态：崩溃后丢失最多 PERSIST_MIN_INTERVAL_MS
+   * 的心跳进度是可接受的，超时判定仍以持久化的 deadline 为准。
+   */
+  private lastPersistedAt: Map<string, number> = new Map();
+
+  /** 心跳落盘的最小间隔。期间的 tick 只更新内存状态。 */
+  private static readonly PERSIST_MIN_INTERVAL_MS = 10_000;
+
+  /**
    * 恢复场景下的兜底超时处理器。
    *
    * `heartbeatOptions` 里的回调是闭包，无法序列化，所以只有
@@ -154,14 +171,19 @@ export class HeartbeatManager {
         state.lastBeat = Date.now();
         state.deadline = Date.now() + state.timeoutMs;
         scheduleTimeoutCheck();
-        void this.persistHeartbeat(state).catch((error) => {
-          Logger.error(
-            options.instanceId,
-            options.nodeId,
-            "Failed to persist heartbeat tick",
-            error instanceof Error ? error.stack : String(error),
-          );
-        });
+
+        // 去抖：内存状态每 tick 都更新（超时判定依赖它），
+        // 但落盘按最小间隔合并，避免写放大。
+        if (this.shouldPersistNow(key)) {
+          void this.persistHeartbeat(state).catch((error) => {
+            Logger.error(
+              options.instanceId,
+              options.nodeId,
+              "Failed to persist heartbeat tick",
+              error instanceof Error ? error.stack : String(error),
+            );
+          });
+        }
       }
 
       if (options.onHeartbeat) {
@@ -197,15 +219,22 @@ export class HeartbeatManager {
 
   stop(instanceId: string, nodeId: string): void {
     const key = this.getKey(instanceId, nodeId);
+
+    // 无条件清理超时定时器，不要嵌在 `if (timer)` 里。
+    // scheduleTimeoutCheck() 会在定时器回调中自我续期，若 stop() 恰好
+    // 发生在「deadline 检查」与「重新布防」之间，就会给一个已经没有
+    // interval 条目的 key 装上新的 setTimeout，之后永远没人清理它。
+    const timeoutTimer = this.timeoutTimers.get(key);
+    if (timeoutTimer) {
+      clearTimeout(timeoutTimer);
+      this.timeoutTimers.delete(key);
+    }
+    this.lastPersistedAt.delete(key);
+
     const timer = this.timers.get(key);
     if (timer) {
       clearInterval(timer);
       this.timers.delete(key);
-      const timeoutTimer = this.timeoutTimers.get(key);
-      if (timeoutTimer) {
-        clearTimeout(timeoutTimer);
-        this.timeoutTimers.delete(key);
-      }
 
       // Remove from memory
       this.heartbeatStates.delete(key);
@@ -239,6 +268,7 @@ export class HeartbeatManager {
     this.heartbeatStates.clear();
     // heartbeatOptions 此前被漏掉，会随进程生命周期无限增长
     this.heartbeatOptions.clear();
+    this.lastPersistedAt.clear();
     Logger.debug("system", "heartbeat", "All heartbeats stopped");
   }
 
@@ -305,6 +335,23 @@ export class HeartbeatManager {
         error instanceof Error ? error.stack : String(error),
       );
     }
+  }
+
+  /**
+   * 判断本次 tick 是否应该真正落盘，并在返回 true 时记账。
+   * 首次 tick 总是落盘，之后按 PERSIST_MIN_INTERVAL_MS 合并。
+   */
+  private shouldPersistNow(key: string): boolean {
+    const now = Date.now();
+    const last = this.lastPersistedAt.get(key);
+    if (
+      last !== undefined &&
+      now - last < HeartbeatManager.PERSIST_MIN_INTERVAL_MS
+    ) {
+      return false;
+    }
+    this.lastPersistedAt.set(key, now);
+    return true;
   }
 
   private async persistHeartbeat(state: HeartbeatState): Promise<void> {
