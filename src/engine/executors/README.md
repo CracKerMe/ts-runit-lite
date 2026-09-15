@@ -2,9 +2,10 @@
 
 This directory contains specialized node executors for different node types in the workflow engine.
 
-> For a complete field-by-field reference covering all 13 node types (including
+> For a complete field-by-field reference covering all 15 node types (including
 > `action`, `wait`, `event`, `rollback`, `subworkflow`, `approval`, `notification`,
-> which aren't covered below), see [docs/NODE_REFERENCE.md](../../../docs/NODE_REFERENCE.md).
+> `join`, `transform`, which aren't covered below), see
+> [docs/NODE_REFERENCE.md](../../../docs/NODE_REFERENCE.md).
 
 > All `*NodeConfig` / `*NodeOutput` types shown below (`HttpNodeConfig`,
 > `SqlNodeConfig`, `QueueNodeConfig`, `ConditionNodeConfig`,
@@ -457,6 +458,55 @@ Iterates over a collection and executes a body node for each item. Supports sequ
 - Concurrency control for parallel execution (`maxConcurrency`)
 - Custom item and index variable names
 - Aggregation of results from each iteration
+
+### JoinNodeExecutor
+
+Waits for a set of branch nodes to complete before proceeding, without needing CAS/locking since the engine's fan-out execution runs candidate branches as a batch within a single process.
+
+**Features:**
+
+- `mode: "all"` waits for every branch in `config.waitFor` to complete
+- `mode: "any"` proceeds as soon as one branch completes
+- Reports which branches completed/were pending when the join resolved
+
+**Example:**
+
+```typescript
+const joinNode = {
+  id: "wait-for-both",
+  type: "join",
+  config: {
+    waitFor: ["fetch-pricing", "fetch-inventory"],
+    mode: "all",
+  },
+  next: ["build-quote"],
+};
+```
+
+See [docs/NODE_REFERENCE.md](../../../docs/NODE_REFERENCE.md#14-join) for the full field reference.
+
+### TransformNodeExecutor
+
+Reshapes prior node outputs into a new object via per-field expression evaluation (not string interpolation), so numbers, booleans, arrays, and objects keep their native types instead of being coerced into strings.
+
+**Example:**
+
+```typescript
+const transformNode = {
+  id: "reshape-order",
+  type: "transform",
+  config: {
+    output: {
+      total: "${priceNode.output.price * priceNode.output.qty}",
+      currency: "${priceNode.output.currency}",
+      isHighValue: "${priceNode.output.price * priceNode.output.qty > 1000}",
+    },
+  },
+  next: ["send-confirmation"],
+};
+```
+
+See [docs/NODE_REFERENCE.md](../../../docs/NODE_REFERENCE.md#15-transform) for the full field reference.
 
 ## Adding New Executors
 

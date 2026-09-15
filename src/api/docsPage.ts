@@ -179,7 +179,15 @@ export function generateConceptsDocHtml(port: number): string {
     <a href="#operators">运算符优先级</a>
     <a href="#functions">内置函数</a>
     <a href="#cas">并发控制（CAS）</a>
+    <a href="#lease">Lease 自动续期</a>
+    <a href="#heartbeat">Heartbeat 跟踪</a>
     <a href="#storage">本地文件持久化</a>
+    <a href="#secrets">密钥解析</a>
+    <a href="#worker-pool">Worker 线程池</a>
+    <a href="#task-queue">任务队列路由</a>
+    <a href="#archive">终态实例归档</a>
+    <a href="#join-transform">join / transform / durable wait</a>
+    <a href="#integration">持久化与外部集成增强</a>
   </nav>
   <main>
 
@@ -250,6 +258,21 @@ ${fnRows}
     <p>实现见 <code>src/engine/ConcurrencyControl.ts</code>。</p>
   </section>
 
+  <section id="lease">
+    <h2>Lease 自动续期</h2>
+    <p>防止长运行任务因超时被误判为失败而重复执行。任务开始时获取一个带过期时间的 Lease，
+    <code>LeaseStore.startAutoRenewal()</code> 在后台周期性续期，任务结束或进程退出时释放。</p>
+    <p>单进程内存实现，不提供跨进程协调；实现见 <code>src/utils/LeaseStore.ts</code>。</p>
+  </section>
+
+  <section id="heartbeat">
+    <h2>Heartbeat 跟踪</h2>
+    <p>长时间运行的 <code>action</code> 节点可通过 <code>heartbeat</code> 配置定期上报进度。
+    <code>HeartbeatManager</code> 通过 <code>StorageProvider</code> 保存和恢复 Heartbeat 状态：
+    使用默认 <code>LocalFileStorage</code> 时可跨进程重启恢复，使用 <code>MemoryStorage</code> 时仅在当前进程生命周期内保留。</p>
+    <p>实现见 <code>src/engine/HeartbeatManager.ts</code>。</p>
+  </section>
+
   <section id="storage">
     <h2>本地文件持久化</h2>
     <p>非测试环境默认使用 <code>LocalFileStorage</code>，数据目录由 <code>STORAGE_DIR</code> 指定（默认 <code>.ts-runit-data/</code>）。
@@ -259,6 +282,66 @@ ${fnRows}
     <div class="callout">
       含 JavaScript 函数/闭包的工作流定义无法序列化。启动时应先关闭自动恢复、由应用代码重新注册这些定义，
       再调用 <code>engine.resumeRunningInstancesFromStorage()</code> 恢复未完成实例。
+    </div>
+    <p>本地文件存储不提供跨进程锁，同一个 <code>STORAGE_DIR</code> 只能由一个引擎进程使用。</p>
+  </section>
+
+  <section id="secrets">
+    <h2>密钥解析（SecretManager）</h2>
+    <p>节点配置中可写 <code>\${secret:NAME}</code>，在 <code>http</code> / <code>sql</code> / <code>queue</code> 节点执行前解析（含嵌套字段）。
+    由 <code>SECRET_PROVIDER</code> 选择后端，默认 <code>env</code>（从环境变量读取）。</p>
+    <div class="callout">
+      <code>vault</code> / <code>aws-secrets-manager</code> 尚未实现，配置后在启动时抛 <code>UnsupportedSecretProviderError</code>，不会静默回退。
+      未找到的密钥保留原样并记录 warn 日志，不会替换成 <code>undefined</code>。
+    </div>
+    <p>实现见 <code>src/utils/SecretManager.ts</code> 与 <code>src/utils/secrets.ts</code>。</p>
+  </section>
+
+  <section id="worker-pool">
+    <h2>Worker 线程池与 Sticky 亲和性</h2>
+    <p><code>WORKER_POOL_ENABLED=true</code> 时，<code>http</code> 节点卸载到 worker 线程执行。
+    每个 worker 有稳定 <code>workerId</code>；同一实例的后续任务优先路由回已绑定的 worker（<code>WORKER_STICKY_ENABLED</code>），
+    绑定的 worker 忙碌时会回退到任意空闲 worker —— 亲和性只做优化，不会阻塞任务。worker 退出或池关闭时释放绑定，
+    避免实例被绑死在已终止的线程上。</p>
+    <p>实现见 <code>src/engine/worker/WorkerPool.ts</code> 与 <code>src/engine/StickyExecutionManager.ts</code>。</p>
+  </section>
+
+  <section id="task-queue">
+    <h2>任务队列路由（TaskQueueManager）</h2>
+    <p><code>action</code> / <code>rollback</code> 节点可通过 <code>taskQueue: "queue-name"</code> 路由到命名队列。
+    队列 worker 通过 <code>taskQueueManager.registerWorker()</code> 注册，受 <code>maxConcurrent</code> 限流；
+    队列无 worker 时回退为本地直接执行，节点不会被卡住。</p>
+    <p>与 <code>queue</code> 节点类型不同：后者对接外部消息中间件，这里是进程内的工作分发。实现见 <code>src/engine/TaskQueueManager.ts</code>。</p>
+  </section>
+
+  <section id="archive">
+    <h2>终态实例归档</h2>
+    <p>归档默认关闭，通过 <code>ARCHIVE_ENABLED=true</code> 启用。终态实例写入 <code>archive/YYYY-MM-DD/&lt;instanceId&gt;.json</code>
+    后，才从热存储移除。<code>ARCHIVE_RETENTION_DAYS</code> 控制日期分区保留时间，<code>ARCHIVE_CLEANUP_INTERVAL_MS</code> 控制清理周期。</p>
+    <div class="callout">归档文件是冷数据，不会自动参与实例查询或启动恢复。</div>
+  </section>
+
+  <section id="join-transform">
+    <h2>join / transform 节点与 durable wait</h2>
+    <p><code>join</code>：等待 <code>config.waitFor</code> 列出的分支节点完成，<code>mode: "all" | "any"</code>；
+    依赖引擎批量 fan-out 执行，单进程场景下无需额外 CAS/加锁。</p>
+    <p><code>transform</code>：通过类型化表达式求值重塑节点输出（而非字符串插值），数字/数组/对象保持原生类型，不强制转成字符串。</p>
+    <p><code>wait</code> 节点新增 <code>config.durationMs</code> / <code>config.until</code>（绝对截止时间）作为相对时长/绝对时间的显式写法，
+    优先级高于旧的顶层 <code>timeout</code> 字段。</p>
+    <p>字段详情见 <a href="https://github.com/AppleSunCloud/ts-runit-lite/blob/main/docs/NODE_REFERENCE.md" target="_blank" rel="noopener">docs/NODE_REFERENCE.md</a> 的
+    <code>join</code>/<code>transform</code>/<code>wait</code> 章节。</p>
+  </section>
+
+  <section id="integration">
+    <h2>持久化与外部集成增强</h2>
+    <p><code>FSYNC_ON_WRITE=true</code> 时，<code>LocalFileStorage</code> 每次写入会 fsync 临时文件和所在目录，
+    换取主机级崩溃/断电下的持久性（代价是写入延迟明显增加）；默认 <code>false</code>，仅保证原子 rename 后文件本身完整。</p>
+    <p><code>createWorkflowRouter()</code> / <code>createWorkflowRouterBundle()</code> 允许宿主 Express 应用将工作流 API
+    挂载为普通 <code>express.Router</code>，无需通过 <code>startApiServer()</code> 独立运行。</p>
+    <p>高频查找/并发错误改用具名错误类导出（<code>WorkflowNotFoundError</code>、<code>InstanceNotFoundError</code>、
+    <code>ConcurrencyConflictError</code>、<code>LockAcquisitionError</code>），支持 <code>instanceof</code> 判断而非匹配错误消息字符串。</p>
+    <div class="callout">
+      示例见 <code>examples/embedded-express-app.ts</code> 与 <code>examples/error-handling.ts</code>。
     </div>
   </section>
 

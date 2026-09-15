@@ -5,7 +5,7 @@
 ## 项目信息
 
 **项目名**: ts-workflow-engine-lite  
-**版本**: 2.1.0（2026 年 7 月）  
+**版本**: 2.2.0（2026 年 9 月）  
 **类型**: 轻量级 TypeScript 工作流引擎（ts-runit 的功能精简 fork）  
 **语言**: TypeScript + Express v5  
 **包管理**: pnpm
@@ -14,12 +14,12 @@
 
 提供一个可独立运行、依赖最小化的工作流编排引擎核心，支持：
 
-- ✅ 13 种核心节点类型（action、wait、event、rollback、subworkflow、http、sql、queue、condition、router、loop、approval、notification）
+- ✅ 15 种核心节点类型（action、wait、event、rollback、subworkflow、http、sql、queue、condition、router、loop、approval、notification、join、transform）
 - ✅ 事件驱动、Cron 调度、Signal/Query/Update 消息机制
-- ✅ 本地文件持久化（默认）与内存存储，面向单进程部署（不含 Redis/分布式集群）
+- ✅ 本地文件持久化（默认）与内存存储，面向单进程部署（不含 Redis/分布式集群），可选 `FSYNC_ON_WRITE` 换取主机级崩溃后的持久性
 - ✅ 并发控制（CAS）、单进程 Lease 自动续期、运行期 Heartbeat 跟踪
 - ✅ 完整的可观测性（结构化日志、Prometheus 指标）
-- ✅ 开发友好的 REST API（工作流、实例、模板、事件、Webhook、分析等端点）
+- ✅ 开发友好的 REST API（工作流、实例、模板、事件、Webhook、分析等端点），也可通过 `createWorkflowRouter()` 挂载到宿主 Express 应用
 - ✅ 表达式引擎（数学/比较/逻辑运算、20+ 内置函数、自定义函数注册）
 
 `AppConfig` 中仍保留少量 Redis/Cluster 配置字段用于兼容旧调用方，但当前 lite 版本不会把它们作为可用的存储或集群后端。
@@ -106,7 +106,8 @@ src/
 │   ├── InstanceManager.ts       # 实例管理
 │   ├── WorkflowRegistry.ts      # 工作流注册表
 │   └── executors/               # 节点执行器：action/http/sql/queue/condition/
-│                                 # router/loop/approval/notification/subworkflow 等
+│                                 # router/loop/approval/notification/subworkflow/
+│                                 # join/transform 等
 ├── api/                # REST API 服务
 │   ├── server.ts                # Express 服务器
 │   ├── routes/                  # 路由处理（workflows/instances/templates/events/
@@ -326,6 +327,22 @@ export interface WorkflowDefinition {
 - `ARCHIVE_RETENTION_DAYS` 控制日期分区保留时间，`ARCHIVE_CLEANUP_INTERVAL_MS` 控制清理周期
 - 归档文件是冷数据，不会自动参与实例查询或启动恢复
 
+### 11. join / transform 节点与 durable wait
+
+- `join`：等待 `config.waitFor` 列出的分支节点完成，`mode: "all" | "any"`；依赖引擎批量 fan-out 执行，单进程场景下无需额外 CAS/加锁
+- `transform`：通过类型化表达式求值重塑节点输出（而非字符串插值），数字/数组/对象保持原生类型，不强制转成字符串
+- `wait` 节点新增 `config.durationMs` / `config.until`（绝对截止时间）作为相对时长/绝对时间的显式写法，优先级高于旧的顶层 `timeout` 字段
+- 三者均已接入 `SchemaValidator`、`WorkflowSchema`（Zod/OpenAPI 的唯一事实来源）、`DryRunExecutor` 与节点模板目录
+- 字段详情见 [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md) 的 `join`/`transform`/`wait` 章节
+
+### 12. 数据持久化与外部集成增强
+
+- `FSYNC_ON_WRITE=true` 时，`LocalFileStorage` 每次写入会 fsync 临时文件和所在目录，换取主机级崩溃/断电下的持久性（代价是写入延迟明显增加）；默认 `false`，仅保证原子 rename 后文件本身完整
+- `createWorkflowRouter()` / `createWorkflowRouterBundle()` 允许宿主 Express 应用将工作流 API 挂载为普通 `express.Router`，无需通过 `startApiServer()` 独立运行；`server.ts` 内部也复用同一套路由装配逻辑
+- 高频查找/并发错误改用具名错误类导出（`WorkflowNotFoundError`、`InstanceNotFoundError`、`ConcurrencyConflictError`、`LockAcquisitionError`），支持 `instanceof` 判断而非匹配错误消息字符串
+- `HttpNodeConfig`/`SqlNodeConfig`/`QueueNodeConfig`/`ConditionNodeConfig`/`RouterNodeConfig`/`LoopNodeConfig` 等类型与 SQL/Queue 连接池注册函数已从包根重导出，外部消费方无需深入 `dist/src/engine/executors/*`
+- 示例见 `examples/embedded-express-app.ts` 与 `examples/error-handling.ts`
+
 ## 环境配置
 
 ### 开发环境
@@ -354,7 +371,7 @@ STORAGE_DIR=/var/lib/ts-runit-lite
 | 文档                                                               | 内容                                                                       |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
 | [README.md](./README.md)                                           | 项目概述、快速开始                                                         |
-| [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md)                 | 13 种节点类型完整字段参考（AI Agent 友好，生成工作流 JSON 前建议先读这份） |
+| [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md)                 | 15 种节点类型完整字段参考（AI Agent 友好，生成工作流 JSON 前建议先读这份） |
 | [src/demo/EXAMPLE_README.md](./src/demo/EXAMPLE_README.md)         | 示例工作流与 API 调用                                                      |
 | [src/engine/executors/README.md](./src/engine/executors/README.md) | HTTP、SQL、Queue 节点说明                                                  |
 | [.env.example](./.env.example)                                     | 环境变量配置                                                               |
@@ -410,6 +427,13 @@ curl http://localhost:3345/workflow-api/v1/workflows
 
 ## 更新日志
 
+### v2.2.0（2026 年 9 月）
+
+- 新增 `join`（多分支汇合，`all`/`any` 模式）与 `transform`（类型化表达式重塑输出）节点类型，`wait` 节点新增 `config.durationMs`/`config.until`
+- 新增 `FSYNC_ON_WRITE`，为 `LocalFileStorage` 写入提供可选的主机级崩溃持久性保障
+- 新增 `createWorkflowRouter()`/`createWorkflowRouterBundle()`，支持将工作流 API 挂载到宿主 Express 应用
+- 新增具名错误类（`WorkflowNotFoundError` 等）与更多类型/连接池注册函数的包根重导出，改善外部消费方使用体验
+
 ### v2.1.0（2026 年 8 月）
 
 - 新增默认本地文件持久化，支持实例、工作流、事件、Heartbeat、指标和死信队列恢复
@@ -427,14 +451,14 @@ curl http://localhost:3345/workflow-api/v1/workflows
 
 ✅ 新增特性：
 
-- 13 种核心节点类型
+- 13 种核心节点类型（后于 v2.2.0 扩展至 15 种，见上）
 - Signal/Query/Update 消息机制
 - EnhancedCronScheduler（Jitter、Backfill、时间窗口）
 - 完整的 OpenAPI 文档
 
 ## 最后更新
 
-- **日期**: 2026-08-19
-- **版本**: 2.1.0
+- **日期**: 2026-09-15
+- **版本**: 2.2.0
 - **维护者**: Sario
 - **许可证**: MIT

@@ -27,6 +27,7 @@ import {
 import { initRateLimiter, rateLimitMiddleware } from "./middleware/rateLimit";
 import { generateConceptsDocHtml } from "./docsPage";
 import { generateApiDocsHtml, openApiSpec } from "./openapi";
+import { generatePlaygroundHtml } from "./playgroundPage";
 import { generateWelcomeHtml } from "./welcomePage";
 import { normalizeApiResponse } from "./response";
 import { createWorkflowRouterBundle } from "./router";
@@ -296,6 +297,11 @@ export async function startApiServer(
     app.get("/docs/concepts", (_req, res) => {
       res.setHeader("Content-Type", "text/html");
       res.send(generateConceptsDocHtml(port));
+    });
+
+    app.get("/playground", (_req, res) => {
+      res.setHeader("Content-Type", "text/html");
+      res.send(generatePlaygroundHtml(port));
     });
 
     app.get("/api-docs", (_req, res) => {

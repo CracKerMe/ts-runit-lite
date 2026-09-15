@@ -204,7 +204,8 @@ export function generateWelcomeHtml(port: number): string {
   <section>
     <h2>快速链接</h2>
     <div class="links">
-      <a class="primary" href="/api-docs">Swagger API 文档</a>
+      <a class="primary" href="/playground">Playground · 在线运行示例</a>
+      <a href="/api-docs">Swagger API 文档</a>
       <a href="/docs/concepts">核心概念文档</a>
       <a href="/api-docs/openapi.json">OpenAPI JSON</a>
       <a href="/workflow-api/v1/health">健康检查</a>
@@ -235,7 +236,7 @@ ${endpointRows}
   </section>
 
   <section>
-    <h2>支持的节点类型（13 种）</h2>
+    <h2>支持的节点类型（15 种）</h2>
     <table>
       <thead><tr><th>type</th><th>名称</th><th>说明</th></tr></thead>
       <tbody>
@@ -261,12 +262,24 @@ ${nodeRows}
       </a>
       <a class="card" href="/docs/concepts#storage">
         <h3>本地文件持久化</h3>
-        <p>默认使用 LocalFileStorage，数据保存在 <code>.ts-runit-data/</code>，支持重启恢复。</p>
+        <p>默认使用 LocalFileStorage，数据保存在 <code>.ts-runit-data/</code>，支持重启恢复，可选 <code>FSYNC_ON_WRITE</code> 换取更强的持久性。</p>
+      </a>
+      <a class="card" href="/docs/concepts#join-transform">
+        <h3>join / transform 节点</h3>
+        <p>join 等待多个并行分支完成（all/any），transform 用类型化表达式重塑节点输出，保留原生数据类型。</p>
+      </a>
+      <a class="card" href="/docs/concepts#worker-pool">
+        <h3>Worker 线程池</h3>
+        <p>HTTP 节点可卸载到 worker 线程执行，支持按实例粘性路由回已绑定的 worker。</p>
+      </a>
+      <a class="card" href="/docs/concepts#integration">
+        <h3>外部集成增强</h3>
+        <p><code>createWorkflowRouter()</code> 挂载到宿主 Express 应用，具名错误类支持 <code>instanceof</code> 判断。</p>
       </a>
     </div>
   </section>
 </main>
-<footer>ts-workflow-engine-lite v2.1.0</footer>
+<footer>ts-workflow-engine-lite v2.2.0</footer>
 </body>
 </html>`;
 }
