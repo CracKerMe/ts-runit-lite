@@ -122,6 +122,7 @@ export class WorkflowEngineV2 {
         this.start(workflowId, context, {
           parentInstanceId: options?.parentInstanceId,
         }),
+      this.heartbeatManager,
     );
     this.canaryReleaseManager = new CanaryReleaseManager(this.storage, this);
     this.dryRunExecutor = new DryRunExecutor((workflowId) =>

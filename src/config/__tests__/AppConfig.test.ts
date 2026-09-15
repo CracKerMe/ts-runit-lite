@@ -11,6 +11,7 @@ describe("AppConfigSchema", () => {
       auth: {},
       cluster: {},
       workerPool: {},
+      actionSandbox: {},
       rateLimit: {},
     });
 

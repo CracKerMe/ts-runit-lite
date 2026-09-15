@@ -15,16 +15,27 @@ export type TaskType =
   | "join"
   | "transform";
 
+import type { WorkflowInstance } from "./Instance";
 import type { RetryPolicy } from "./RetryPolicy";
+
+/**
+ * Action/rollback node callback. Always receives the live WorkflowInstance
+ * (never omitted at runtime — see TaskExecutor/controlNodes call sites) and
+ * its return value is stored verbatim as the node's output, so callers that
+ * need a specific output shape should narrow the return type themselves.
+ */
+export type WorkflowActionFn = (instance: WorkflowInstance) => Promise<unknown>;
+
+/** action/rollback 节点的字符串求值配置（见 SandboxEvaluator）。 */
+export interface ActionNodeConfig {
+  /** 沙箱内求值的 JS 代码，作为函数体执行；未设置 node.action 时的兜底方式 */
+  action?: string;
+}
 
 export interface TaskNode {
   id: string;
   type: TaskType;
-  // action callbacks receive WorkflowInstance at runtime;
-  // using unknown would require 300+ null-checks in examples and user code.
-  // TODO: Create a branded WorkflowActionFn type once examples are updated.
-  // oxlint-disable-next-line no-explicit-any -- see above rationale
-  action?: (instance?: any) => Promise<any>;
+  action?: WorkflowActionFn;
   /**
    * wait 节点的相对等待时长（毫秒）。仍受支持，作为 config.durationMs 的
    * 简写形式；同时设置时以 config 为准。

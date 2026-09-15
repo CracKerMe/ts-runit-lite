@@ -1,8 +1,9 @@
 // oxlint-disable no-explicit-any -- TaskExecutor dispatches to heterogeneous node executors with dynamic config
 import { recordNodeExecution } from "../../metrics/index";
 import type { WorkflowInstance } from "../../model/Instance";
+import type { ActionNodeConfig, WorkflowActionFn } from "../../model/Workflow";
 import { Logger } from "../../utils/Logger";
-import { evaluateSandboxed } from "../SandboxEvaluator";
+import { evaluateActionSandboxed } from "../SandboxEvaluator";
 import {
   type ConditionNodeConfig,
   ConditionNodeExecutor,
@@ -33,6 +34,7 @@ export async function dispatchControlNode(
   ctx: NodeDispatchContext,
 ): Promise<true | undefined> {
   const { node, instance, logEntry, startTime, onComplete, storage } = ctx;
+  const engineHeartbeatManager = ctx.heartbeatManager;
 
   if (node.type === "condition") {
     const conditionConfig = requireNodeConfig<ConditionNodeConfig>(
@@ -155,48 +157,54 @@ export async function dispatchControlNode(
     // 使其在通过正常引擎路径（而非 WorkflowInstanceControl.compensate()）到达时
     // 也能安全执行，而不是落到 "Unsupported task type" 兜底分支。
     // 如果没有action函数，提供一个默认的处理逻辑
-    const actionFn =
+    const actionFn: WorkflowActionFn =
       node.action ||
-      (async (actionInstance?: WorkflowInstance) => {
-        // 从config中读取配置
-        const config = node.config || {};
+      (async (actionInstance: WorkflowInstance) => {
+        const config = node.config as ActionNodeConfig | undefined;
 
-        // 如果config中有action字符串，尝试执行它
-        if (config.action && typeof config.action === "string") {
-          try {
-            // Use sandboxed evaluation instead of raw new Function()
-            // Workflow definitions are trusted but defense-in-depth is better
-            const fnBody = config.action;
-            // Wrap action code as a function body that receives the instance
-            const result = evaluateSandboxed(
-              `(function(instance) { ${fnBody} })(context.instance)`,
-              { instance: actionInstance },
-              { timeoutMs: 5000 },
-            );
-            return result;
-          } catch (error: any) {
-            Logger.warn(
-              actionInstance?.instanceId ?? "system",
-              node.id,
-              `Failed to execute action string: ${error.message}`,
-            );
-          }
+        // 如果config中没有action字符串，走默认成功兜底（未配置任何 action 视为空操作）
+        if (!config?.action || typeof config.action !== "string") {
+          return { status: "completed", timestamp: new Date().toISOString() };
         }
 
-        // 默认返回成功
-        return { status: "completed", timestamp: new Date().toISOString() };
+        // Use sandboxed evaluation instead of raw new Function()
+        // Workflow definitions are trusted but defense-in-depth is better.
+        // context 里同时以 `instance` 和 `context.instance` 两种方式暴露同一个
+        // 对象，与 BreakpointManager 里 evaluateConditionSandboxed 的约定保持一致。
+        // evaluateActionSandboxed 在配置了 worker 隔离时会把求值挪到独立线程
+        // （真正的独立堆、超时后可硬终止）；未配置时透明回退到进程内 vm。
+        const fnBody = config.action;
+        return evaluateActionSandboxed(
+          `(function(instance) { ${fnBody} })(instance)`,
+          { instance: actionInstance, context: { instance: actionInstance } },
+        );
+        // 求值失败时不在这里捕获——异常应正常向上抛出，交给下面的 try/catch
+        // 走节点失败路径（重试、failureNext 等），而不是伪装成功。
       });
     let heartbeatKey: string | undefined;
 
     const heartbeatConfig = node.heartbeat;
-    const heartbeatMgr = new HeartbeatManager();
-    if (heartbeatConfig?.interval) {
-      heartbeatKey = await heartbeatMgr.start({
-        instanceId: instance.instanceId,
-        nodeId: node.id,
-        interval: heartbeatConfig.interval,
-        onHeartbeat: heartbeatConfig.onHeartbeat,
-      });
+    const heartbeatInterval = heartbeatConfig?.interval;
+    const heartbeatMgr =
+      engineHeartbeatManager ?? new HeartbeatManager(storage);
+    if (heartbeatInterval) {
+      const heartbeatTimeout = heartbeatConfig?.timeout;
+      heartbeatKey = await heartbeatMgr.start(
+        {
+          instanceId: instance.instanceId,
+          nodeId: node.id,
+          interval: heartbeatInterval,
+          onHeartbeat: heartbeatConfig?.onHeartbeat,
+          onTimeout: () => {
+            Logger.error(
+              instance.instanceId,
+              node.id,
+              `Heartbeat timed out after ${heartbeatTimeout ?? heartbeatInterval * 3}ms`,
+            );
+          },
+        },
+        heartbeatTimeout,
+      );
     }
 
     try {

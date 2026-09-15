@@ -10,6 +10,10 @@ import {
   setContainer,
 } from "./container";
 import { configureHeartbeatManager } from "./engine/HeartbeatManager";
+import {
+  configureActionSandboxIsolation,
+  shutdownActionSandboxIsolation,
+} from "./engine/SandboxEvaluator";
 import { stickyExecutionManager } from "./engine/StickyExecutionManager";
 import { initWorkerPool, shutdownWorkerPool } from "./engine/TaskExecutor";
 import { WorkflowEngineV2 } from "./engine/WorkflowEngineV2";
@@ -113,6 +117,20 @@ export async function bootstrap(
     Logger.info("system", "bootstrap", "Worker pool initialized");
   }
 
+  if (config.actionSandbox.isolationEnabled) {
+    configureActionSandboxIsolation({
+      minWorkers: config.actionSandbox.minWorkers,
+      maxWorkers: config.actionSandbox.maxWorkers,
+      taskTimeoutMs: config.actionSandbox.taskTimeoutMs,
+      idleTimeoutMs: config.actionSandbox.idleTimeoutMs,
+    });
+    Logger.info(
+      "system",
+      "bootstrap",
+      "Action sandbox worker-thread isolation enabled",
+    );
+  }
+
   // 3. 创建工作流引擎
   Logger.info("system", "bootstrap", "Using WorkflowEngineV2");
   const engine = new WorkflowEngineV2(
@@ -143,6 +161,10 @@ export async function bootstrap(
       async () => {
         Logger.info("system", "shutdown", "Stopping worker pool...");
         await shutdownWorkerPool();
+      },
+      async () => {
+        Logger.info("system", "shutdown", "Stopping action sandbox pool...");
+        await shutdownActionSandboxIsolation();
       },
       async () => {
         Logger.info("system", "shutdown", "Stopping scheduler...");

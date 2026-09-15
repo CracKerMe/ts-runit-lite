@@ -6,6 +6,7 @@ import { appendHistory } from "../model/Instance";
 import type { TaskNode } from "../model/Workflow";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { Logger } from "../utils/Logger";
+import type { HeartbeatManager } from "./HeartbeatManager";
 import { dispatchControlNode } from "./nodeDispatch/controlNodes";
 import {
   getWorkerPool,
@@ -29,6 +30,7 @@ export async function execute(
   onComplete: (nextNodes: string[]) => void,
   onError: (error: Error) => void,
   storage?: StorageProvider,
+  heartbeatManager?: HeartbeatManager,
 ) {
   const logEntry: ExecutionLog = {
     nodeId: node.id,
@@ -65,7 +67,15 @@ export async function execute(
     }
   }
 
-  const ctx = { node, instance, logEntry, startTime, onComplete, storage };
+  const ctx = {
+    node,
+    instance,
+    logEntry,
+    startTime,
+    onComplete,
+    storage,
+    heartbeatManager,
+  };
 
   try {
     let handled = await dispatchIoNode(ctx);

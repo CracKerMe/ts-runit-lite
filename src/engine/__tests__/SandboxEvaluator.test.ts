@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
+  configureActionSandboxIsolation,
+  evaluateActionSandboxed,
   evaluateConditionSandboxed,
   evaluateSandboxed,
   isSandboxAvailable,
+  shutdownActionSandboxIsolation,
 } from "../SandboxEvaluator";
 
 describe("SandboxEvaluator", () => {
@@ -106,5 +109,56 @@ describe("SandboxEvaluator", () => {
     it("should return true when VM module is available", () => {
       expect(isSandboxAvailable()).toBe(true);
     });
+  });
+
+  describe("evaluateActionSandboxed", () => {
+    afterEach(async () => {
+      // Isolation config is process-global; always reset it so other test
+      // files (and other tests in this file) see the default in-process path.
+      await shutdownActionSandboxIsolation();
+    });
+
+    it("falls back to the in-process vm path when isolation is not configured", async () => {
+      const result = await evaluateActionSandboxed("x + y", { x: 1, y: 2 });
+      expect(result).toBe(3);
+    });
+
+    it("still blocks dangerous patterns on the fallback path", async () => {
+      await expect(evaluateActionSandboxed("process.env", {})).rejects.toThrow(
+        "blocked pattern",
+      );
+    });
+
+    it("routes to a worker thread when isolation is configured, with the same semantics", async () => {
+      configureActionSandboxIsolation({
+        minWorkers: 0,
+        maxWorkers: 1,
+        taskTimeoutMs: 2000,
+        idleTimeoutMs: 30000,
+      });
+
+      const result = await evaluateActionSandboxed(
+        "(function(instance) { return instance.status; })(instance)",
+        { instance: { status: "completed" } },
+      );
+      expect(result).toBe("completed");
+
+      await expect(evaluateActionSandboxed("process.env", {})).rejects.toThrow(
+        "blocked pattern",
+      );
+    }, 10000);
+
+    it("uses the configured isolation timeout when the caller gives no override", async () => {
+      configureActionSandboxIsolation({
+        minWorkers: 0,
+        maxWorkers: 1,
+        taskTimeoutMs: 20,
+        idleTimeoutMs: 30000,
+      });
+
+      await expect(
+        evaluateActionSandboxed("(function() { while (true) {} })()"),
+      ).rejects.toThrow(/timed out/i);
+    }, 10000);
   });
 });

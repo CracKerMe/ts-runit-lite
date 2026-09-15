@@ -135,10 +135,12 @@ export const exampleWorkflow: WorkflowDefinition = {
       id: "send-notification",
       type: "action",
       action: async (instance) => {
+        const premiumOutput = instance?.state?.nodes?.["premium-process"]
+          ?.output as { channel?: string } | undefined;
+        const standardOutput = instance?.state?.nodes?.["standard-process"]
+          ?.output as { channel?: string } | undefined;
         const channel =
-          instance?.state?.nodes?.["premium-process"]?.output?.channel ??
-          instance?.state?.nodes?.["standard-process"]?.output?.channel ??
-          "unknown";
+          premiumOutput?.channel ?? standardOutput?.channel ?? "unknown";
 
         logStep("STEP-3", "📧 发送订单通知...", {
           channel,

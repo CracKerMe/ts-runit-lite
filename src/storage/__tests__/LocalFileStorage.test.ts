@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkflowInstance } from "../../model/Instance";
+import type { WorkflowDefinition } from "../../model/Workflow";
 import { DeadLetterQueue } from "../../dlq/index";
 import { LocalFileStorage } from "../LocalFileStorage";
 
@@ -78,6 +79,158 @@ describe("LocalFileStorage", () => {
       status: "completed",
       version: 2,
     });
+  });
+
+  it("rolls back the in-memory CAS update when persisting to disk fails", async () => {
+    // 回归守卫：casUpdateInstance 曾先在内存里提交新版本，再落盘；落盘失败时
+    // 内存已经是新版本、磁盘还是旧版本，两者永久分叉。persist 失败后应该把
+    // 内存状态强制退回旧值，并把原始异常继续往外抛。
+    const instance = makeInstance("instance-cas-rollback");
+    await storage.saveInstance(instance);
+
+    const updated = { ...instance, status: "completed" as const };
+    const persistError = new Error("simulated disk write failure");
+    const original = (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist.bind(storage);
+    (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist = async () => {
+      throw persistError;
+    };
+
+    await expect(storage.casUpdateInstance(updated)).rejects.toThrow(
+      persistError,
+    );
+
+    // 内存状态应该已经回滚到 CAS 之前的旧值，而不是停在半提交的新版本。
+    const afterFailure = await storage.loadInstance(instance.instanceId);
+    expect(afterFailure).toMatchObject({ status: "running", version: 1 });
+
+    // 恢复正常的 persist 后，CAS 应该能正常成功，且不受回滚影响。
+    (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist = original;
+    expect(await storage.casUpdateInstance(updated)).toBe(true);
+    expect(await storage.loadInstance(instance.instanceId)).toMatchObject({
+      status: "completed",
+      version: 2,
+    });
+  });
+
+  it("does not roll back a newer in-memory write when an older write fails", async () => {
+    const instance = makeInstance("instance-write-race");
+    await storage.saveInstance(instance);
+
+    const originalPersist = (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist.bind(storage);
+    let releaseFirstPersist: (() => void) | undefined;
+    const firstPersist = new Promise<void>((resolve) => {
+      releaseFirstPersist = resolve;
+    });
+    let calls = 0;
+    (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist = async (...args) => {
+      calls += 1;
+      if (calls === 1) {
+        await firstPersist;
+        throw new Error("older write failed");
+      }
+      return originalPersist(...args);
+    };
+
+    const older = storage.saveInstance({ ...instance, status: "pending" });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await storage.saveInstance({ ...instance, status: "completed" });
+    releaseFirstPersist?.();
+    await expect(older).rejects.toThrow("older write failed");
+
+    expect(await storage.loadInstance(instance.instanceId)).toMatchObject({
+      status: "completed",
+    });
+  });
+
+  it("rolls back a brand-new workflow from memory when persisting it fails", async () => {
+    // 同一类问题也存在于 saveWorkflow：先写内存 Map，再落盘。这里覆盖的是
+    // "全新记录、没有旧值可退回" 的分支——回滚应该把内存里的条目删掉，
+    // 而不是留下一个磁盘上不存在的幽灵工作流。
+    const persistError = new Error("simulated disk write failure");
+    const original = (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist.bind(storage);
+    (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist = async () => {
+      throw persistError;
+    };
+
+    const workflow: WorkflowDefinition = {
+      id: "workflow-rollback-new",
+      name: "Rollback New",
+      startNode: "start",
+      nodes: {
+        start: { id: "start", type: "action", config: { action: "" } },
+      },
+    };
+
+    await expect(storage.saveWorkflow(workflow)).rejects.toThrow(persistError);
+    expect(await storage.loadWorkflow("workflow-rollback-new")).toBeNull();
+
+    (
+      storage as unknown as {
+        persist: (
+          collection: string,
+          id: string,
+          value: unknown,
+        ) => Promise<void>;
+      }
+    ).persist = original;
+    await storage.saveWorkflow(workflow);
+    expect(await storage.loadWorkflow("workflow-rollback-new")).not.toBeNull();
   });
 
   it("persists serializable workflow definitions but skips closures", async () => {

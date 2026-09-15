@@ -294,6 +294,33 @@ const WorkerPoolConfigSchema = z.object({
     .describe("Sticky binding TTL in ms"),
 });
 
+// ── Action Sandbox Isolation Config ──────────────────────────────────────────
+
+const ActionSandboxConfigSchema = z.object({
+  isolationEnabled: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Run action/rollback string bodies in a dedicated worker_threads pool " +
+        "(real V8 isolate + heap, hard-terminable on timeout) instead of the " +
+        "in-process vm module. Off by default: zero new threads unless opted in.",
+    ),
+  minWorkers: z.number().int().min(0).max(64).default(0),
+  maxWorkers: z.number().int().min(1).max(256).default(4),
+  taskTimeoutMs: z
+    .number()
+    .min(10)
+    .max(600_000)
+    .default(5_000)
+    .describe("Hard wall-clock budget; the worker is terminated on expiry"),
+  idleTimeoutMs: z
+    .number()
+    .min(10_000)
+    .max(3_600_000)
+    .default(300_000)
+    .describe("Idle worker recycle time in ms"),
+});
+
 // ── Secret Manager Config ────────────────────────────────────────────────────
 
 const SecretManagerConfigSchema = z
@@ -340,6 +367,7 @@ export const AppConfigSchema = z.object({
   auth: AuthConfigSchema,
   cluster: ClusterConfigSchema,
   workerPool: WorkerPoolConfigSchema,
+  actionSandbox: ActionSandboxConfigSchema,
   secretProvider: SecretManagerConfigSchema,
   rateLimit: RateLimitConfigSchema,
   archive: ArchiveConfigSchema.default({
@@ -484,6 +512,22 @@ function parseEnvToRawConfig(): Record<string, unknown> {
         100,
       ),
       stickyTtlMs: parseEnvNumber(process.env.WORKER_STICKY_TTL_MS, 60_000),
+    },
+    actionSandbox: {
+      isolationEnabled: parseEnvBoolean(
+        process.env.ACTION_SANDBOX_ISOLATION_ENABLED,
+        false,
+      ),
+      minWorkers: parseEnvNumber(process.env.ACTION_SANDBOX_MIN, 0),
+      maxWorkers: parseEnvNumber(process.env.ACTION_SANDBOX_MAX, 4),
+      taskTimeoutMs: parseEnvNumber(
+        process.env.ACTION_SANDBOX_TASK_TIMEOUT_MS,
+        5_000,
+      ),
+      idleTimeoutMs: parseEnvNumber(
+        process.env.ACTION_SANDBOX_IDLE_TIMEOUT_MS,
+        300_000,
+      ),
     },
     secretProvider: (process.env.SECRET_PROVIDER || "env") as
       | "env"

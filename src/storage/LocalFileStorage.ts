@@ -65,6 +65,12 @@ export class LocalFileStorage extends MemoryStorage {
   private readonly fsyncOnWrite: boolean;
   private readonly directoryFsyncQueues = new Map<string, Promise<void>>();
   private writeQueues = new Map<string, Promise<void>>();
+  /**
+   * Tracks the latest in-memory mutation for each durable record. A failed
+   * older write must never compensate over a newer mutation which has already
+   * reached memory (and possibly disk).
+   */
+  private persistenceGenerations = new Map<string, number>();
   private deadLetterEntries = new Map<string, unknown>();
   private webhookEntries = new Map<string, unknown>();
   private webhookDeliveryEntries = new Map<string, unknown>();
@@ -141,23 +147,36 @@ export class LocalFileStorage extends MemoryStorage {
   }
 
   override async saveInstance(instance: WorkflowInstance): Promise<void> {
+    const previous = await super.loadInstance(instance.instanceId);
     await super.saveInstance(instance);
-    await this.persist(
+    await this.persistOrRollback(
       "instances",
       instance.instanceId,
       await super.loadInstance(instance.instanceId),
+      async () => {
+        if (previous) await super.saveInstance(previous);
+        else await super.deleteInstance(instance.instanceId);
+      },
     );
   }
 
   override async casUpdateInstance(
     instance: WorkflowInstance,
   ): Promise<boolean> {
+    const previous = await super.loadInstance(instance.instanceId);
     const updated = await super.casUpdateInstance(instance);
     if (updated) {
-      await this.persist(
+      await this.persistOrRollback(
         "instances",
         instance.instanceId,
         await super.loadInstance(instance.instanceId),
+        async () => {
+          // The CAS already committed the new version in memory (super
+          // mutates its Map synchronously); if the disk write fails, force
+          // the in-memory copy back to the pre-CAS value so a live read and
+          // a restart-recovered read can't permanently disagree.
+          if (previous) await super.saveInstance(previous);
+        },
       );
     }
     return updated;
@@ -169,9 +188,18 @@ export class LocalFileStorage extends MemoryStorage {
   }
 
   override async saveWorkflow(workflow: WorkflowDefinition): Promise<void> {
+    const previous = await super.loadWorkflow(workflow.id);
     await super.saveWorkflow(workflow);
     if (this.isJsonSerializable(workflow)) {
-      await this.persist("workflows", workflow.id, workflow);
+      await this.persistOrRollback(
+        "workflows",
+        workflow.id,
+        workflow,
+        async () => {
+          if (previous) await super.saveWorkflow(previous);
+          else await super.deleteWorkflow(workflow.id);
+        },
+      );
     } else {
       Logger.warn(
         "system",
@@ -196,11 +224,20 @@ export class LocalFileStorage extends MemoryStorage {
   override async saveEventWaitingState(
     state: EventWaitingState,
   ): Promise<void> {
+    const previous = await super.loadEventWaitingState(
+      state.instanceId,
+      state.nodeId,
+    );
     await super.saveEventWaitingState(state);
-    await this.persist(
+    await this.persistOrRollback(
       "waiting",
       `${state.instanceId}__${state.nodeId}`,
       state,
+      async () => {
+        if (previous) await super.saveEventWaitingState(previous);
+        else
+          await super.deleteEventWaitingState(state.instanceId, state.nodeId);
+      },
     );
   }
 
@@ -215,31 +252,50 @@ export class LocalFileStorage extends MemoryStorage {
   override async saveWorkflowWithMetadata(
     workflow: StoredWorkflow,
   ): Promise<void> {
+    const previous = await super.loadWorkflowWithMetadata(workflow.id);
     await super.saveWorkflowWithMetadata(workflow);
     if (this.isJsonSerializable(workflow.definition)) {
-      await this.persist("workflow-metadata", workflow.id, workflow);
+      await this.persistOrRollback(
+        "workflow-metadata",
+        workflow.id,
+        workflow,
+        async () => {
+          if (previous) await super.saveWorkflowWithMetadata(previous);
+        },
+      );
     }
   }
 
   override async saveWorkflowVersion(
     version: StoredWorkflowVersion,
   ): Promise<void> {
+    const previous = await super.loadWorkflowVersion(
+      version.id,
+      version.version,
+    );
     await super.saveWorkflowVersion(version);
     if (this.isJsonSerializable(version.definition)) {
-      await this.persist(
+      await this.persistOrRollback(
         "workflow-versions",
         `${version.id}__${version.version}`,
         version,
+        async () => {
+          if (previous) await super.saveWorkflowVersion(previous);
+        },
       );
     }
   }
 
   override async saveInstanceMetrics(metrics: InstanceMetrics): Promise<void> {
+    const previous = await super.loadInstanceMetrics(metrics.instanceId);
     await super.saveInstanceMetrics(metrics);
-    await this.persist(
+    await this.persistOrRollback(
       "metrics",
       metrics.instanceId,
       await super.loadInstanceMetrics(metrics.instanceId),
+      async () => {
+        if (previous) await super.saveInstanceMetrics(previous);
+      },
     );
   }
 
@@ -248,17 +304,30 @@ export class LocalFileStorage extends MemoryStorage {
     nodeId: string,
     metrics: NodeMetrics,
   ): Promise<void> {
+    const previous = await super.loadInstanceMetrics(instanceId);
     await super.updateNodeMetrics(instanceId, nodeId, metrics);
-    await this.persist(
+    await this.persistOrRollback(
       "metrics",
       instanceId,
       await super.loadInstanceMetrics(instanceId),
+      async () => {
+        if (previous) await super.saveInstanceMetrics(previous);
+      },
     );
   }
 
   override async saveEvent(event: EventRecord): Promise<void> {
+    const previous = await super.loadEvent(event.id);
     await super.saveEvent(event);
-    await this.persist("events", event.id, await super.loadEvent(event.id));
+    await this.persistOrRollback(
+      "events",
+      event.id,
+      await super.loadEvent(event.id),
+      async () => {
+        if (previous) await super.saveEvent(previous);
+        else await super.deleteEvent(event.id);
+      },
+    );
   }
 
   override async deleteEvent(eventId: string): Promise<void> {
@@ -267,8 +336,19 @@ export class LocalFileStorage extends MemoryStorage {
   }
 
   override async saveHeartbeat(state: HeartbeatState): Promise<void> {
+    const previous = (await super.loadAllHeartbeats()).find(
+      (hb) => hb.heartbeatKey === state.heartbeatKey,
+    );
     await super.saveHeartbeat(state);
-    await this.persist("heartbeats", state.heartbeatKey, state);
+    await this.persistOrRollback(
+      "heartbeats",
+      state.heartbeatKey,
+      state,
+      async () => {
+        if (previous) await super.saveHeartbeat(previous);
+        else await super.deleteHeartbeat(state.instanceId, state.nodeId);
+      },
+    );
   }
 
   override async deleteHeartbeat(
@@ -479,6 +559,46 @@ export class LocalFileStorage extends MemoryStorage {
       if (this.writeQueues.get(key) === current) {
         this.writeQueues.delete(key);
       }
+    }
+  }
+
+  /**
+   * Persist to disk after an in-memory write already landed, rolling the
+   * in-memory state back to `rollback()` if the disk write fails. Every
+   * MemoryStorage mutator commits to its Map synchronously before
+   * LocalFileStorage gets a chance to persist, so a failed `persist()` would
+   * otherwise leave memory ahead of disk with no way to reconcile them (a
+   * restart would recover the older, correct-for-disk state while the live
+   * process kept serving the newer one). `rollback` should restore the
+   * in-memory collection to what it held before the mutation — typically a
+   * `super.saveX(previousValue)`/`super.deleteX(...)` call — and the original
+   * disk-write error is always rethrown so callers still see the failure.
+   */
+  private async persistOrRollback(
+    collection: Collection,
+    id: string,
+    value: unknown,
+    rollback: () => Promise<void>,
+  ): Promise<void> {
+    const key = this.filePath(collection, id);
+    const generation = (this.persistenceGenerations.get(key) ?? 0) + 1;
+    this.persistenceGenerations.set(key, generation);
+    try {
+      await this.persist(collection, id, value);
+    } catch (error) {
+      // A later mutation has superseded this write. Its state is the only
+      // valid live state to retain, so rolling back to this operation's old
+      // snapshot would reintroduce a memory/disk split.
+      if (this.persistenceGenerations.get(key) === generation) {
+        await rollback();
+      }
+      Logger.error(
+        "system",
+        "storage",
+        `Failed to persist ${collection}/${id} to disk${this.persistenceGenerations.get(key) === generation ? "; rolled back in-memory state" : "; a newer mutation remains in memory"}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw error;
     }
   }
 
