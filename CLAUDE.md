@@ -332,8 +332,10 @@ export interface WorkflowDefinition {
 - `join`：等待 `config.waitFor` 列出的分支节点完成，`mode: "all" | "any"`；依赖引擎批量 fan-out 执行，单进程场景下无需额外 CAS/加锁
 - `transform`：通过类型化表达式求值重塑节点输出（而非字符串插值），数字/数组/对象保持原生类型，不强制转成字符串
 - `wait` 节点新增 `config.durationMs` / `config.until`（绝对截止时间）作为相对时长/绝对时间的显式写法，优先级高于旧的顶层 `timeout` 字段
+- `wait` 默认是 **durable** 的（`config.durable` 缺省即 `true`）：首次进入时把绝对 deadline 固化到 `instance.state.nodes[nodeId].deadline` 并持久化，进程重启恢复后按原 deadline 续等剩余时长而非从头计时；停机期间已过期的等待恢复后立即触发。`config.durable: false` 恢复旧行为（每次进入都重新计时），用于 loop 体内需要每轮完整等待的场景
+  - 仍不是"进程外"计时——引擎不会替你在进程下线期间推进时间，触发时刻的上限是"进程恢复的那一刻"；要求**秒级准时**触发，或进程不保证常驻/会重启，仍需改用外部调度器到期后调用 `event` 节点触发（见 [docs/BUSINESS_SCENARIOS.md](./docs/BUSINESS_SCENARIOS.md) 的 P-11 模式）
 - 三者均已接入 `SchemaValidator`、`WorkflowSchema`（Zod/OpenAPI 的唯一事实来源）、`DryRunExecutor` 与节点模板目录
-- 字段详情见 [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md) 的 `join`/`transform`/`wait` 章节
+- 字段详情见 [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md) 的 `join`/`transform`/`wait` 章节，业务场景与选型见 [docs/BUSINESS_SCENARIOS.md](./docs/BUSINESS_SCENARIOS.md)
 
 ### 12. 数据持久化与外部集成增强
 
@@ -372,6 +374,7 @@ STORAGE_DIR=/var/lib/ts-runit-lite
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------- |
 | [README.md](./README.md)                                           | 项目概述、快速开始                                                         |
 | [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md)                 | 15 种节点类型完整字段参考（AI Agent 友好，生成工作流 JSON 前建议先读这份） |
+| [docs/BUSINESS_SCENARIOS.md](./docs/BUSINESS_SCENARIOS.md)         | 多节点组合模式与行业业务场景全景图、能力边界与选型清单                    |
 | [src/demo/EXAMPLE_README.md](./src/demo/EXAMPLE_README.md)         | 示例工作流与 API 调用                                                      |
 | [src/engine/executors/README.md](./src/engine/executors/README.md) | HTTP、SQL、Queue 节点说明                                                  |
 | [.env.example](./.env.example)                                     | 环境变量配置                                                               |

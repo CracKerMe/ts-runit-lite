@@ -232,13 +232,32 @@ export async function dispatchControlNode(
   }
 
   if (node.type === "wait") {
-    const waitMs = resolveWaitDurationMs(node);
+    // Pins an absolute deadline into instance state on first entry, so a
+    // restart mid-wait resumes against the original deadline instead of
+    // restarting the clock. See resolveWaitDurationMs.
+    const waitMs = resolveWaitDurationMs(node, instance);
     if (waitMs === undefined) {
       return undefined;
     }
 
-    // 执行等待节点
-    const deadline = Date.now() + waitMs;
+    const deadline =
+      instance.state?.nodes?.[node.id]?.deadline ?? Date.now() + waitMs;
+
+    // Persist the pinned deadline BEFORE sleeping — a crash during the sleep
+    // would otherwise lose it and restart the full duration on recovery.
+    if (storage) {
+      try {
+        await storage.saveInstance(instance);
+      } catch (error: unknown) {
+        Logger.error(
+          instance.instanceId,
+          node.id,
+          "Failed to persist wait deadline",
+          error instanceof Error ? error.stack : String(error),
+        );
+      }
+    }
+
     Logger.log(
       instance.instanceId,
       node.id,
@@ -259,6 +278,9 @@ export async function dispatchControlNode(
       if (!instance.state.nodes) {
         instance.state.nodes = {};
       }
+      // Replaces the node state wholesale, which also drops the pinned
+      // `deadline` — required so a re-entry (loop body, rollback revisit)
+      // starts a fresh wait rather than firing instantly against a stale one.
       instance.state.nodes[node.id] = {
         output: { waited: waitMs, deadline },
       };

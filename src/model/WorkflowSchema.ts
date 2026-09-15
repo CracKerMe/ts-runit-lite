@@ -149,6 +149,7 @@ export const WaitNodeConfigSchema = z
   .object({
     durationMs: z.number().optional(),
     until: z.string().optional(),
+    durable: z.boolean().optional(),
   })
   .meta({ id: "WaitNodeConfig" });
 
