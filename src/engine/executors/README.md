@@ -2,6 +2,14 @@
 
 This directory contains specialized node executors for different node types in the workflow engine.
 
+> All `*NodeConfig` / `*NodeOutput` types shown below (`HttpNodeConfig`,
+> `SqlNodeConfig`, `QueueNodeConfig`, `ConditionNodeConfig`,
+> `RouterNodeConfig`, `LoopNodeConfig`, plus the SQL/Queue registration
+> helpers) are re-exported from the package root, so external consumers can
+> `import type { HttpNodeConfig } from "ts-workflow-engine-lite"` instead of
+> reaching into `dist/src/engine/executors/...` — the `./engine/executors/...`
+> import paths below are only accurate when editing this repository itself.
+
 ## Available Executors
 
 ### HttpNodeExecutor

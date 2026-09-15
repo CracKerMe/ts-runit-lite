@@ -5,24 +5,46 @@ import { z } from "zod";
  * Validates all environment variables at startup with type safety and range checks.
  */
 
-// ── Legacy Redis Configuration (compatibility only; no active backend) ──────
+// ── Legacy Redis Configuration ───────────────────────────────────────────────
+// ⚠️ 兼容性占位字段：ts-workflow-engine-lite 是单进程 lite 版本，不包含 Redis
+// 客户端依赖，也不会用这些值建立任何连接。设置这些字段（或对应的环境变量）
+// 不会让引擎接入 Redis 或分布式存储/限流后端——它们只是为了让从完整版
+// ts-runit 迁移过来的旧调用方在读取/序列化配置对象时不报错。
+// 需要 Redis 或集群能力时应使用完整版 ts-runit，或自行接入外部方案。
 
 const RedisConfigSchema = z.object({
   enabled: z
     .boolean()
     .default(false)
-    .describe("Legacy Redis compatibility flag (no active lite backend)"),
-  host: z.string().default("localhost").describe("Redis host"),
-  port: z.number().int().min(1).max(65535).default(6379).describe("Redis port"),
-  password: z.string().optional().describe("Redis password (optional)"),
+    .describe(
+      "⚠️ 兼容性占位字段，当前 lite 版本没有可用的 Redis 后端，设为 true 不会生效",
+    ),
+  host: z
+    .string()
+    .default("localhost")
+    .describe("⚠️ 兼容性占位字段，不生效（无 Redis 后端）"),
+  port: z
+    .number()
+    .int()
+    .min(1)
+    .max(65535)
+    .default(6379)
+    .describe("⚠️ 兼容性占位字段，不生效（无 Redis 后端）"),
+  password: z
+    .string()
+    .optional()
+    .describe("⚠️ 兼容性占位字段，不生效（无 Redis 后端）"),
   maxRetriesPerRequest: z
     .number()
     .int()
     .min(0)
     .max(10)
     .default(3)
-    .describe("Max retries per request"),
-  lazyConnect: z.boolean().default(true).describe("Lazy connect to Redis"),
+    .describe("⚠️ 兼容性占位字段，不生效（无 Redis 后端）"),
+  lazyConnect: z
+    .boolean()
+    .default(true)
+    .describe("⚠️ 兼容性占位字段，不生效（无 Redis 后端）"),
 });
 
 // ── Resource Limits ──────────────────────────────────────────────────────────
@@ -189,24 +211,31 @@ const AuthConfigSchema = z.object({
 });
 
 // ── Cluster Config ───────────────────────────────────────────────────────────
+// ⚠️ 兼容性占位字段：这些值只在此处被解析/校验，engine/event 模块不会读取
+// 或依据它们改变任何行为。把 leaderElection / eventBusDistributed 设为 true
+// 不会让引擎获得多进程领导者选举或分布式事件总线——lite 版本是单进程设计，
+// 需要这些能力时应使用完整版 ts-runit。
 
 const ClusterConfigSchema = z.object({
-  leaderElection: z.boolean().default(false).describe("Enable leader election"),
+  leaderElection: z
+    .boolean()
+    .default(false)
+    .describe("⚠️ 兼容性占位字段，当前 lite 版本未接入，设为 true 不会生效"),
   leaderKey: z
     .string()
     .default("workflow:leader")
-    .describe("Redis key for leader election"),
+    .describe("⚠️ 兼容性占位字段，不生效（无领导者选举实现）"),
   leaderTtlMs: z
     .number()
     .int()
     .min(5000)
     .max(300_000)
     .default(30_000)
-    .describe("Leader lease TTL in ms"),
+    .describe("⚠️ 兼容性占位字段，不生效（无领导者选举实现）"),
   eventBusDistributed: z
     .boolean()
     .default(false)
-    .describe("Enable distributed event bus"),
+    .describe("⚠️ 兼容性占位字段，当前 lite 版本未接入，设为 true 不会生效"),
 });
 
 // ── Worker Pool Config ───────────────────────────────────────────────────────

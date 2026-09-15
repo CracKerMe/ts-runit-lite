@@ -84,12 +84,29 @@ try {
 `waitForCompletion()` returns when an instance is `completed`, `failed`, or
 `cancelled`. It accepts `timeoutMs`, `pollIntervalMs`, and an `AbortSignal`.
 
+### Which initialization API should I use?
+
+The package exposes two ways to get a running `WorkflowEngineV2`:
+
+| API                                                                              | Use when                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bootstrap(options)`                                                             | **Default choice.** One call wires storage, secret manager, optional worker pool and archiving, and graceful shutdown, then returns `{ engine, container }`. Matches what the CLI and the quick start above use.                                                                                                                                                                                                          |
+| `createContainer(options)` + `setContainer(container)` + `createEngine(options)` | You need finer control over initialization order (e.g. registering workflows or a custom `SecretManager` between container and engine creation), or you're composing multiple engines against containers you manage yourself. `createEngine()` reads its container from the process-wide singleton set by `setContainer()` — call `createContainer` and `setContainer` first, or it throws `"Container not initialized"`. |
+
+`bootstrap()` also calls `setContainer(container)` internally, so its
+returned `container` is the same process-wide singleton `createEngine()`
+reads from — you can still call `createEngine()` again afterwards (e.g. to
+create a second engine sharing that container) without calling
+`setContainer` yourself.
+
 ## Run the examples
 
 ```bash
-pnpm example:quickstart # minimal embedded workflow
-pnpm example:order      # condition branch and multi-step order workflow
-pnpm dev                # event-driven built-in demo
+pnpm example:quickstart        # minimal embedded workflow
+pnpm example:order             # condition branch and multi-step order workflow
+pnpm example:embedded-express  # mounting createWorkflowRouter into a host Express app
+pnpm example:error-handling    # catching WorkflowNotFoundError / InstanceNotFoundError
+pnpm dev                       # event-driven built-in demo
 ```
 
 ## Run the REST API
@@ -113,6 +130,40 @@ http://localhost:3345/api-docs
 The CLI entry point creates `.env` from `.env.example` when needed. The
 embedded `bootstrap()` API reads the current environment but does not create or
 load an `.env` file automatically.
+
+### Mounting into an existing Express app
+
+`startApiServer()` above creates and starts its own standalone `express()`
+app — use it when this package should run as its own HTTP service. To
+instead mount the workflow API as a router inside a host application's
+existing Express app (sharing its port, body parser, and auth middleware),
+use `createWorkflowRouter()`:
+
+```ts
+import express from "express";
+import { bootstrap, createWorkflowRouter } from "ts-workflow-engine-lite";
+
+const { engine, container } = await bootstrap({ skipGracefulShutdown: true });
+
+const app = express();
+app.use(express.json());
+// Apply your own auth/rate-limit middleware here if needed.
+app.use(
+  "/workflow-api/v1",
+  await createWorkflowRouter(engine, container.storage),
+);
+
+app.listen(3000);
+```
+
+The router exposes `/workflows`, `/instances`, `/events`, `/webhooks`,
+`/dlq`, `/templates`, `/analytics`, `/functions`, `/health`, and (unless
+`{ enableMetrics: false }` is passed) `/metrics`. It expects
+`express.json()` to already have run, and does **not** include
+`startApiServer`'s standalone-service concerns — helmet/CORS, rate
+limiting, JWT auth, the welcome/docs pages, or the WebSocket console
+stream. Add whatever of those the host app needs on its own app instance
+before mounting this router.
 
 ## Configuration
 
@@ -208,6 +259,25 @@ archiving is enabled. For a consistent backup across collections, stop the
 engine cleanly before copying the directories. Restore by copying them back to
 the configured paths before startup. Do not edit active JSON files while the
 engine is running.
+
+## Error handling
+
+The engine throws named error classes (exported from the package root) for
+the highest-frequency lookup/concurrency failure modes, so callers can
+`instanceof`-check them instead of matching `Error.message` strings:
+
+| Class                      | Thrown when                                                                                                                                                                                   |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `WorkflowNotFoundError`    | `engine.start()` / `engine.dryRun()` / internal execution reference a `workflowId` (optionally a specific `version`) that isn't registered. Has `.workflowId` and `.version`.                 |
+| `InstanceNotFoundError`    | `engine.signal()` / `engine.query()` / `engine.update()` / `waitForCompletion()` reference an `instanceId` that doesn't resolve to a stored instance. Has `.instanceId`.                      |
+| `ConcurrencyConflictError` | Optimistic concurrency control (CAS) exhausts its retry budget persisting an instance update — another writer kept winning the race on `instance.version`. Has `.instanceId` and `.attempts`. |
+| `LockAcquisitionError`     | `ConcurrencyControl.withLock()` fails to acquire a lock within its retry budget. Has `.resourceId`.                                                                                           |
+
+Other failures (timeouts, invalid state transitions, the max-instances
+limit, schema validation via `DataValidationError`) still throw plain
+`Error` or their own existing error class — see
+[`examples/error-handling.ts`](./examples/error-handling.ts) for a runnable
+demonstration.
 
 ## Supported workflow features
 

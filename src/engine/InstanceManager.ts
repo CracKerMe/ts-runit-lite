@@ -2,6 +2,7 @@
 import type { WorkflowInstance } from "../model/Instance";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { Logger } from "../utils/Logger";
+import { ConcurrencyConflictError } from "./errors";
 import { searchAttributeManager } from "./SearchAttributeManager";
 
 /**
@@ -179,9 +180,7 @@ export class InstanceManager {
         "system",
         `Failed to update instance after ${maxRetries} CAS retries, possible concurrent modification`,
       );
-      throw new Error(
-        `Failed to persist instance ${instance.instanceId} after ${maxRetries} CAS retries`,
-      );
+      throw new ConcurrencyConflictError(instance.instanceId, maxRetries);
     }
   }
 

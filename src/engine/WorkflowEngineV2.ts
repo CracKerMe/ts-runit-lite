@@ -21,6 +21,7 @@ import { createLeaseStore, type LeaseStore } from "../utils/LeaseStore";
 import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
 import { destroyConcurrencyControl } from "./ConcurrencyControl";
+import { InstanceNotFoundError, WorkflowNotFoundError } from "./errors";
 import {
   CanaryReleaseManager,
   type CanaryStatus,
@@ -209,9 +210,7 @@ export class WorkflowEngineV2 {
       ? this.workflowRegistry.getWorkflow(workflowId, resolvedVersion)
       : this.workflowRegistry.getWorkflow(workflowId, options?.version);
     if (!workflow) {
-      throw new Error(
-        `Workflow ${workflowId}${options?.version ? ` version ${options.version}` : ""} not found`,
-      );
+      throw new WorkflowNotFoundError(workflowId, options?.version);
     }
 
     // 输入 Schema 校验（SCHEMA_VALIDATION=strict|warn|off，默认 off）
@@ -303,7 +302,7 @@ export class WorkflowEngineV2 {
       ? this.workflowRegistry.getWorkflow(instance.workflowId, resolvedVersion)
       : undefined;
     if (!workflow) {
-      throw new Error(`Workflow ${instance.workflowId} not found`);
+      throw new WorkflowNotFoundError(instance.workflowId);
     }
     if (!instance.workflowVersion && resolvedVersion) {
       instance.workflowVersion = resolvedVersion;
@@ -551,7 +550,7 @@ export class WorkflowEngineV2 {
 
       const instance = this.getInstance(instanceId);
       if (!instance) {
-        throw new Error(`Workflow instance ${instanceId} not found`);
+        throw new InstanceNotFoundError(instanceId);
       }
 
       if (["completed", "failed", "cancelled"].includes(instance.status)) {
@@ -742,7 +741,7 @@ export class WorkflowEngineV2 {
   ): Promise<DryRunResult> {
     const workflow = this.workflowRegistry.getWorkflow(workflowId);
     if (!workflow) {
-      throw new Error(`Workflow ${workflowId} not found`);
+      throw new WorkflowNotFoundError(workflowId);
     }
 
     const result: SandboxDryRunResult = await this.dryRunExecutor.execute(
@@ -776,7 +775,7 @@ export class WorkflowEngineV2 {
   ): Promise<void> {
     const instance = await this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      throw new Error(`Instance not found: ${instanceId}`);
+      throw new InstanceNotFoundError(instanceId);
     }
 
     if (instance.status !== "running" && instance.status !== "paused") {
@@ -819,7 +818,7 @@ export class WorkflowEngineV2 {
   ): Promise<T> {
     const instance = await this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      throw new Error(`Instance not found: ${instanceId}`);
+      throw new InstanceNotFoundError(instanceId);
     }
 
     return messageBus.sendQuery<T>(instanceId, queryName, payload);
@@ -844,7 +843,7 @@ export class WorkflowEngineV2 {
   ): Promise<T> {
     const instance = await this.instanceManager.getInstance(instanceId);
     if (!instance) {
-      throw new Error(`Instance not found: ${instanceId}`);
+      throw new InstanceNotFoundError(instanceId);
     }
 
     if (instance.status !== "running" && instance.status !== "paused") {

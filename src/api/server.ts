@@ -11,17 +11,14 @@ import type { Server } from "http";
 import morgan from "morgan";
 import { WebSocketServer } from "ws";
 import { getAppConfig } from "../config/AppConfig";
-import { getDLQ } from "../dlq/index";
 import type { WorkflowEngineV2 } from "../engine/WorkflowEngineV2";
 import { setHookDispatcher } from "../event/HookManager";
-import { getMetrics, recordApiRequest } from "../metrics/index";
+import { recordApiRequest } from "../metrics/index";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { AuditLogger } from "../utils/AuditLogger";
 import { parseEnvInt } from "../utils/env";
 import { errorMessage, errorStack, Logger } from "../utils/Logger";
-import { ConsoleWebSocketManager } from "./ConsoleWebSocketManager";
 import { ApiError, ErrorCode, errorHandler } from "./ErrorHandler";
-import { EventHistoryManager } from "./EventHistory";
 import {
   type AuthUser,
   combinedAuthMiddleware,
@@ -31,21 +28,8 @@ import { initRateLimiter, rateLimitMiddleware } from "./middleware/rateLimit";
 import { generateConceptsDocHtml } from "./docsPage";
 import { generateApiDocsHtml, openApiSpec } from "./openapi";
 import { generateWelcomeHtml } from "./welcomePage";
-import {
-  createSuccessResponse,
-  isSuccessfulApiBody,
-  normalizeApiResponse,
-} from "./response";
-import analyticsRoutes from "./routes/analytics";
-import dlqRoutes from "./routes/dlq";
-import { createEventRoutes } from "./routes/eventHistory";
-import eventRoutes from "./routes/events";
-import functionRoutes from "./routes/functions";
-import instanceRoutes from "./routes/instances";
-import templateRoutes from "./routes/templates";
-import webhookRoutes from "./routes/webhooks";
-import workflowRoutes from "./routes/workflows/index";
-import { WebhookManager } from "./WebhookManager";
+import { normalizeApiResponse } from "./response";
+import { createWorkflowRouterBundle } from "./router";
 
 /**
  * API 服务器配置
@@ -118,11 +102,11 @@ export async function startApiServer(
 
   try {
     const app = express();
-    const webhookManager = new WebhookManager(storage || undefined);
-    webhookManager.startCleanupScheduler();
-    const eventHistoryManager = new EventHistoryManager(storage || undefined);
-    const consoleWsManager = new ConsoleWebSocketManager(storage || undefined);
-    const dlq = getDLQ();
+    const {
+      router: apiRouter,
+      webhookManager,
+      consoleWsManager,
+    } = createWorkflowRouterBundle(engine, storage, { enableMetrics });
 
     setHookDispatcher((payload) => {
       webhookManager.triggerHook(payload, "system");
@@ -294,107 +278,9 @@ export async function startApiServer(
       app.use(combinedAuthMiddleware);
     }
 
-    // API 基础路由
-    const apiRouter = express.Router();
-
-    // 为路由处理器提供必要的依赖
-    apiRouter.use((req, _res, next) => {
-      req.engine = engine;
-      req.storage = storage;
-      req.webhookManager = webhookManager;
-      req.eventHistoryManager = eventHistoryManager;
-      req.consoleWsManager = consoleWsManager;
-      req.dlq = dlq;
-      next();
-    });
-
-    // 事件历史记录中间件 — MUST be registered BEFORE routes so it intercepts res.json
-    apiRouter.use(async (req, res, next) => {
-      const originalJson = res.json;
-      res.json = function (body) {
-        const method = req.method;
-        const path = req.path;
-
-        if (isSuccessfulApiBody(body)) {
-          if (
-            method === "POST" &&
-            path.includes("/workflows") &&
-            path.includes("/start") &&
-            (body as { data?: { instanceId?: string } }).data?.instanceId
-          ) {
-            const workflowId = req.params.id;
-            const instanceId = (body as { data: { instanceId: string } }).data
-              .instanceId;
-            const context = req.body || {};
-
-            eventHistoryManager
-              .recordEvent(
-                "workflow_started",
-                { workflowId, instanceId, context },
-                "api",
-                instanceId,
-              )
-              .catch((err) => {
-                Logger.error(
-                  "api",
-                  "event-history",
-                  `Error recording workflow start event: ${err.message}`,
-                );
-              });
-          }
-
-          if (method === "POST" && path.includes("/events/trigger")) {
-            const { event, data = {}, instanceId } = req.body;
-            eventHistoryManager
-              .recordEvent(event, data, "api", instanceId)
-              .catch((err) => {
-                Logger.error(
-                  "api",
-                  "event-history",
-                  `Error recording triggered event: ${err.message}`,
-                );
-              });
-          }
-        }
-
-        return originalJson.call(this, body);
-      };
-      next();
-    });
-
-    // 添加路由
-    apiRouter.use("/workflows", workflowRoutes);
-    apiRouter.use("/webhooks", webhookRoutes);
-    apiRouter.use("/events", eventRoutes);
-    apiRouter.use("/instances", instanceRoutes);
-    apiRouter.use("/events/history", createEventRoutes(eventHistoryManager));
-    apiRouter.use("/dlq", dlqRoutes);
-    apiRouter.use("/templates", templateRoutes);
-    apiRouter.use("/analytics", analyticsRoutes);
-    apiRouter.use("/functions", functionRoutes);
-
-    // 健康检查端点
-    apiRouter.get("/health", (_req, res) => {
-      res.status(200).json(
-        createSuccessResponse(
-          {
-            status: "ok",
-            version: process.env.npm_package_version || "1.0.0",
-          },
-          "Service healthy",
-        ),
-      );
-    });
-
-    // Prometheus 指标端点
-    if (enableMetrics) {
-      apiRouter.get("/metrics", (_req, res) => {
-        res.set("Content-Type", "text/plain; charset=utf-8");
-        res.send(getMetrics());
-      });
-    }
-
-    // 注册 API 路由
+    // 注册 API 路由（/workflows、/instances、/events、/webhooks、/dlq、
+    // /templates、/analytics、/functions、/health、/metrics 均已在
+    // createWorkflowRouterBundle 中挂载，此处只需整体挂到基础路径下）
     app.use("/workflow-api/v1", apiRouter);
 
     // API 文档端点
