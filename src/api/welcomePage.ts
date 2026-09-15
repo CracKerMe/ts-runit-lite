@@ -209,7 +209,7 @@ export function generateWelcomeHtml(port: number): string {
       <a href="/docs/concepts">核心概念文档</a>
       <a href="/api-docs/openapi.json">OpenAPI JSON</a>
       <a href="/workflow-api/v1/health">健康检查</a>
-      <a href="https://github.com/AppleSunCloud/ts-runit-lite" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a href="https://github.com/CracKerMe/ts-runit-lite" target="_blank" rel="noopener">GitHub 仓库</a>
     </div>
   </section>
 

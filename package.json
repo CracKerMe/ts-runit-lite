@@ -19,15 +19,15 @@
     "workflow",
     "workflow-engine"
   ],
-  "homepage": "https://github.com/AppleSunCloud/ts-runit-lite",
+  "homepage": "https://github.com/CracKerMe/ts-runit-lite",
   "bugs": {
-    "url": "https://github.com/AppleSunCloud/ts-runit-lite/issues"
+    "url": "https://github.com/CracKerMe/ts-runit-lite/issues"
   },
   "license": "MIT",
   "author": "Sario(1160948478@qq.com)",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/AppleSunCloud/ts-runit-lite.git"
+    "url": "git+https://github.com/CracKerMe/ts-runit-lite.git"
   },
   "files": [
     "dist/src",
