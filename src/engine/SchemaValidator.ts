@@ -56,6 +56,8 @@ export class SchemaValidator {
         "loop",
         "approval",
         "notification",
+        "join",
+        "transform",
       ],
     );
   }
@@ -123,10 +125,15 @@ export class SchemaValidator {
 
       switch (node.type) {
         case "wait":
-          if (node.timeout === undefined) {
+          if (
+            node.timeout === undefined &&
+            config?.durationMs === undefined &&
+            !config?.until
+          ) {
             errors.push({
               path: `${pathPrefix}.timeout`,
-              message: "Wait node requires a timeout",
+              message:
+                "Wait node requires a timeout, config.durationMs, or config.until",
               code: "MISSING_REQUIRED_FIELD",
             });
           }
@@ -234,6 +241,49 @@ export class SchemaValidator {
             errors.push({
               path: `${pathPrefix}.subworkflowId`,
               message: "Subworkflow node requires a subworkflowId",
+              code: "MISSING_REQUIRED_FIELD",
+            });
+          }
+          break;
+
+        case "join":
+          if (!config) {
+            errors.push({
+              path: `${pathPrefix}.config`,
+              message: "Join node requires config",
+              code: "MISSING_REQUIRED_FIELD",
+            });
+            break;
+          }
+          if (
+            !Array.isArray(config.waitFor) ||
+            (config.waitFor as unknown[]).length === 0
+          ) {
+            errors.push({
+              path: `${pathPrefix}.config.waitFor`,
+              message: "Join node requires a non-empty config.waitFor array",
+              code: "MISSING_REQUIRED_FIELD",
+            });
+          }
+          break;
+
+        case "transform":
+          if (!config) {
+            errors.push({
+              path: `${pathPrefix}.config`,
+              message: "Transform node requires config",
+              code: "MISSING_REQUIRED_FIELD",
+            });
+            break;
+          }
+          if (
+            !config.output ||
+            typeof config.output !== "object" ||
+            Array.isArray(config.output)
+          ) {
+            errors.push({
+              path: `${pathPrefix}.config.output`,
+              message: "Transform node requires config.output to be an object",
               code: "MISSING_REQUIRED_FIELD",
             });
           }
@@ -564,6 +614,21 @@ export class SchemaValidator {
           code: "INVALID_NODE_REFERENCE",
         });
       }
+
+      if (node.type === "join") {
+        const joinConfig = node.config as { waitFor?: unknown } | undefined;
+        if (Array.isArray(joinConfig?.waitFor)) {
+          joinConfig.waitFor.forEach((waitForId: unknown, index: number) => {
+            if (typeof waitForId === "string" && !nodeIds.has(waitForId)) {
+              errors.push({
+                path: `nodes.${nodeId}.config.waitFor[${index}]`,
+                message: `Join waitFor references non-existent node: ${waitForId}`,
+                code: "INVALID_NODE_REFERENCE",
+              });
+            }
+          });
+        }
+      }
     });
 
     return errors;
@@ -595,6 +660,32 @@ export class SchemaValidator {
             }
           }
         });
+      }
+
+      if (node.type === "transform") {
+        const transformConfig = node.config as
+          | { output?: Record<string, unknown> }
+          | undefined;
+        if (
+          transformConfig?.output &&
+          typeof transformConfig.output === "object"
+        ) {
+          Object.entries(transformConfig.output).forEach(([field, expr]) => {
+            if (typeof expr !== "string") return;
+            const unwrapped =
+              expr.trim().startsWith("${") && expr.trim().endsWith("}")
+                ? expr.trim().slice(2, -1)
+                : expr.trim();
+            const result = validateExpression(unwrapped);
+            if (!result.valid) {
+              errors.push({
+                path: `nodes.${nodeId}.config.output.${field}`,
+                message: `Invalid expression syntax: ${result.error}`,
+                code: "INVALID_EXPRESSION",
+              });
+            }
+          });
+        }
       }
     });
 

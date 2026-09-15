@@ -223,6 +223,56 @@ export class DryRunExecutor {
       case "notification":
         warnings.push(`Node '${node.id}' notification skipped in dry-run`);
         return { ok: true, mocked: true };
+      case "join": {
+        // Dry-run walks the graph depth-first from a single start node, so
+        // (unlike the real engine's batched fan-out) a join is typically
+        // reached via only one of its waitFor branches — the others may not
+        // have been visited yet. Report which are already known and flag
+        // the rest as unverified rather than failing the simulation.
+        const config = (node.config ?? {}) as { waitFor?: string[] };
+        const waitFor = config.waitFor ?? [];
+        const known = waitFor.filter(
+          (id) => instance.state?.nodes?.[id]?.output !== undefined,
+        );
+        const unverified = waitFor.filter((id) => !known.includes(id));
+        if (unverified.length > 0) {
+          warnings.push(
+            `Node '${node.id}' join: branch(es) not reached by this dry-run path yet: ${unverified.join(", ")}`,
+          );
+        }
+        return {
+          results: Object.fromEntries(
+            known.map((id) => [id, instance.state?.nodes?.[id]?.output]),
+          ),
+          missing: unverified,
+          mocked: true,
+        };
+      }
+      case "transform": {
+        const config = (node.config ?? {}) as {
+          output?: Record<string, string>;
+        };
+        const fields = config.output ?? {};
+        const result: Record<string, unknown> = {};
+        const evalContext = this.buildExpressionContext(instance);
+        for (const [field, rawExpr] of Object.entries(fields)) {
+          const trimmed = rawExpr.trim();
+          const expr =
+            trimmed.startsWith("${") && trimmed.endsWith("}")
+              ? trimmed.slice(2, -1)
+              : trimmed;
+          try {
+            result[field] = evaluate(expr, evalContext);
+          } catch (error: unknown) {
+            warnings.push(
+              `Node '${node.id}' transform field '${field}' failed to evaluate: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            );
+          }
+        }
+        return result;
+      }
       case "subworkflow": {
         warnings.push(
           `Subworkflow '${node.subworkflowId}' executed in nested dry-run`,

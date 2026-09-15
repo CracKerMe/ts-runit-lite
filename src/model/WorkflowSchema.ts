@@ -24,6 +24,8 @@ export const TaskTypeSchema = z.enum([
   "loop",
   "approval",
   "notification",
+  "join",
+  "transform",
 ]);
 
 const httpNodeConfigSchema = z
@@ -130,13 +132,36 @@ export const NotificationNodeConfigSchema = z
   })
   .meta({ id: "NotificationNodeConfig" });
 
+const joinNodeConfigSchema = z
+  .object({
+    waitFor: z.array(z.string()).min(1),
+    mode: z.enum(["all", "any"]).optional(),
+  })
+  .meta({ id: "JoinNodeConfig" });
+
+const transformNodeConfigSchema = z
+  .object({
+    output: z.record(z.string(), z.string()),
+  })
+  .meta({ id: "TransformNodeConfig" });
+
+export const WaitNodeConfigSchema = z
+  .object({
+    durationMs: z.number().optional(),
+    until: z.string().optional(),
+  })
+  .meta({ id: "WaitNodeConfig" });
+
 /** Per-type config schema, keyed by TaskType. Types without a dedicated
- * declarative config (action/wait/event/rollback/subworkflow) accept any
+ * declarative config (action/event/rollback/subworkflow) accept any
  * object — action nodes in particular carry a JS closure at runtime and
- * are not representable in a JSON schema. */
+ * are not representable in a JSON schema. `wait`'s config is optional at
+ * the node level (TaskNode.timeout is a legacy alternative), but when
+ * present it must match WaitNodeConfigSchema. */
 export const nodeConfigSchemaByType: Partial<
   Record<z.infer<typeof TaskTypeSchema>, z.ZodTypeAny>
 > = {
+  wait: WaitNodeConfigSchema,
   http: httpNodeConfigSchema,
   sql: sqlNodeConfigSchema,
   queue: queueNodeConfigSchema,
@@ -145,6 +170,8 @@ export const nodeConfigSchemaByType: Partial<
   loop: loopNodeConfigSchema,
   approval: ApprovalNodeConfigSchema,
   notification: NotificationNodeConfigSchema,
+  join: joinNodeConfigSchema,
+  transform: transformNodeConfigSchema,
 };
 
 const conditionalBranchSchema = z.object({

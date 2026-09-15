@@ -93,7 +93,44 @@ describe("WorkflowSchema", () => {
 
     it("returns null for node types without a declarative config schema", () => {
       expect(validateNodeConfig("action", {})).toBeNull();
-      expect(validateNodeConfig("wait", {})).toBeNull();
+      expect(validateNodeConfig("event", {})).toBeNull();
+    });
+
+    it("accepts a wait config with durationMs or until, or no config at all", () => {
+      expect(validateNodeConfig("wait", {})?.success).toBe(true);
+      expect(validateNodeConfig("wait", { durationMs: 5000 })?.success).toBe(
+        true,
+      );
+      expect(
+        validateNodeConfig("wait", { until: "2026-10-01T00:00:00Z" })?.success,
+      ).toBe(true);
+    });
+
+    it("validates a valid join config", () => {
+      const result = validateNodeConfig("join", {
+        waitFor: ["a", "b"],
+        mode: "all",
+      });
+      expect(result?.success).toBe(true);
+    });
+
+    it("rejects a join config with an empty waitFor", () => {
+      const result = validateNodeConfig("join", { waitFor: [] });
+      expect(result?.success).toBe(false);
+    });
+
+    it("validates a valid transform config", () => {
+      const result = validateNodeConfig("transform", {
+        output: { total: "${a.output.x + b.output.y}" },
+      });
+      expect(result?.success).toBe(true);
+    });
+
+    it("rejects a transform config with a non-string output field", () => {
+      const result = validateNodeConfig("transform", {
+        output: { total: 42 },
+      });
+      expect(result?.success).toBe(false);
     });
   });
 

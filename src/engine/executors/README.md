@@ -2,6 +2,10 @@
 
 This directory contains specialized node executors for different node types in the workflow engine.
 
+> For a complete field-by-field reference covering all 13 node types (including
+> `action`, `wait`, `event`, `rollback`, `subworkflow`, `approval`, `notification`,
+> which aren't covered below), see [docs/NODE_REFERENCE.md](../../../docs/NODE_REFERENCE.md).
+
 > All `*NodeConfig` / `*NodeOutput` types shown below (`HttpNodeConfig`,
 > `SqlNodeConfig`, `QueueNodeConfig`, `ConditionNodeConfig`,
 > `RouterNodeConfig`, `LoopNodeConfig`, plus the SQL/Queue registration

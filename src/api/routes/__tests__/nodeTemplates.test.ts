@@ -15,6 +15,8 @@ const ALL_TASK_TYPES = [
   "loop",
   "approval",
   "notification",
+  "join",
+  "transform",
 ];
 
 describe("nodeTemplates catalog", () => {

@@ -22,6 +22,8 @@ const NODE_TYPES: NodeTypeInfo[] = [
   { type: "loop", label: "循环", desc: "循环执行子节点" },
   { type: "approval", label: "审批", desc: "等待人工审批" },
   { type: "notification", label: "通知", desc: "发送通知消息" },
+  { type: "join", label: "汇聚", desc: "等待多个并行分支全部/任一完成" },
+  { type: "transform", label: "转换", desc: "按表达式重塑节点输出数据" },
 ];
 
 interface EndpointInfo {

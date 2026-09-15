@@ -1,6 +1,6 @@
 import { recordNodeExecution } from "../../metrics/index";
 import type { ExecutionLog, WorkflowInstance } from "../../model/Instance";
-import type { TaskNode } from "../../model/Workflow";
+import type { TaskNode, WaitNodeConfig } from "../../model/Workflow";
 import type { StorageProvider } from "../../storage/StorageProvider";
 import { Logger } from "../../utils/Logger";
 import {
@@ -12,6 +12,38 @@ import { WorkerPool, type WorkerPoolConfig } from "../worker/WorkerPool";
 
 // Configurable threshold for slow execution warnings (in milliseconds)
 export const SLOW_EXECUTION_THRESHOLD_MS = 5000; // 5 seconds default
+
+/**
+ * Resolve how long a `wait` node should sleep for, in milliseconds.
+ *
+ * Precedence: `config.until` (absolute ISO timestamp) > `config.durationMs`
+ * (relative) > `node.timeout` (legacy relative-ms field, kept for backward
+ * compatibility). Returns `undefined` when none are set (node.type "wait"
+ * with no timing config is a no-op, same as today).
+ *
+ * `until` in the past resolves to `0` (fires immediately) rather than a
+ * negative timeout, since `setTimeout` treats a negative delay as 0 anyway
+ * but callers may want to log/branch on it explicitly.
+ */
+export function resolveWaitDurationMs(node: TaskNode): number | undefined {
+  const config = node.config as WaitNodeConfig | undefined;
+
+  if (config?.until) {
+    const deadline = new Date(config.until).getTime();
+    if (Number.isNaN(deadline)) {
+      throw new Error(
+        `Wait node config.until is not a valid date: ${config.until}`,
+      );
+    }
+    return Math.max(0, deadline - Date.now());
+  }
+
+  if (config?.durationMs !== undefined) {
+    return Math.max(0, config.durationMs);
+  }
+
+  return node.timeout;
+}
 let workerPool: WorkerPool | null = null;
 
 export function initWorkerPool(config?: Partial<WorkerPoolConfig>): WorkerPool {

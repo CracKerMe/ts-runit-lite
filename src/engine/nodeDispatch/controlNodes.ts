@@ -8,15 +8,24 @@ import {
   ConditionNodeExecutor,
 } from "../executors/ConditionNodeExecutor";
 import {
+  type JoinNodeConfig,
+  JoinNodeExecutor,
+} from "../executors/JoinNodeExecutor";
+import {
   type RouterNodeConfig,
   RouterNodeExecutor,
 } from "../executors/RouterNodeExecutor";
+import {
+  type TransformNodeConfig,
+  TransformNodeExecutor,
+} from "../executors/TransformNodeExecutor";
 import { HeartbeatManager } from "../HeartbeatManager";
 import { taskQueueManager } from "../TaskQueueManager";
 import {
   completeStandardNode,
   handleRouting,
   requireNodeConfig,
+  resolveWaitDurationMs,
 } from "./helpers";
 import type { NodeDispatchContext } from "./types";
 
@@ -91,6 +100,53 @@ export async function dispatchControlNode(
       node.id,
       "Loop node execution passed to engine level",
     );
+    return true;
+  }
+
+  if (node.type === "join") {
+    const joinConfig = requireNodeConfig<JoinNodeConfig>(node, "Join");
+
+    const result = await JoinNodeExecutor.execute(joinConfig, instance);
+
+    await completeStandardNode({
+      node,
+      instance,
+      logEntry,
+      result,
+      startTime,
+      onComplete,
+      storage,
+      logMessage: "Join node succeeded",
+      logData: {
+        resolved: Object.keys(result.results),
+        missing: result.missing,
+      },
+    });
+    return true;
+  }
+
+  if (node.type === "transform") {
+    const transformConfig = requireNodeConfig<TransformNodeConfig>(
+      node,
+      "Transform",
+    );
+
+    const result = await TransformNodeExecutor.execute(
+      transformConfig,
+      instance,
+    );
+
+    await completeStandardNode({
+      node,
+      instance,
+      logEntry,
+      result,
+      startTime,
+      onComplete,
+      storage,
+      logMessage: "Transform node succeeded",
+      logData: result as Record<string, unknown>,
+    });
     return true;
   }
 
@@ -175,12 +231,18 @@ export async function dispatchControlNode(
     return true;
   }
 
-  if (node.type === "wait" && node.timeout) {
+  if (node.type === "wait") {
+    const waitMs = resolveWaitDurationMs(node);
+    if (waitMs === undefined) {
+      return undefined;
+    }
+
     // 执行等待节点
+    const deadline = Date.now() + waitMs;
     Logger.log(
       instance.instanceId,
       node.id,
-      `Starting wait for ${node.timeout}ms`,
+      `Starting wait for ${waitMs}ms (deadline: ${new Date(deadline).toISOString()})`,
     );
 
     setTimeout(() => {
@@ -188,7 +250,7 @@ export async function dispatchControlNode(
       const duration = endTime - startTime;
 
       logEntry.status = "success";
-      logEntry.duration = node.timeout;
+      logEntry.duration = waitMs;
 
       // 等待节点也记录输出（虽然通常为空）
       if (!instance.state) {
@@ -197,7 +259,9 @@ export async function dispatchControlNode(
       if (!instance.state.nodes) {
         instance.state.nodes = {};
       }
-      instance.state.nodes[node.id] = { output: { waited: node.timeout } };
+      instance.state.nodes[node.id] = {
+        output: { waited: waitMs, deadline },
+      };
 
       Logger.log(
         instance.instanceId,
@@ -255,7 +319,7 @@ export async function dispatchControlNode(
           error?.stack,
         );
       });
-    }, node.timeout);
+    }, waitMs);
     return true;
   }
 

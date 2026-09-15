@@ -27,6 +27,7 @@ import { Logger } from "../utils/Logger";
 import type { LoopNodeConfig } from "./executors/LoopNodeExecutor";
 import { LoopNodeExecutor } from "./executors/LoopNodeExecutor";
 import type { InstanceManager } from "./InstanceManager";
+import { resolveWaitDurationMs } from "./nodeDispatch/helpers";
 import { StateMachine } from "./StateMachine";
 import { SubworkflowExecutor } from "./SubworkflowExecutor";
 import { TaskExecutor } from "./TaskExecutor";
@@ -251,18 +252,21 @@ export class ExecutionOrchestrator {
             }),
           );
 
-          if (node.type === "wait" && node.timeout) {
-            void hookManager.emit(
-              createHookPayload({
-                event: "node.waiting",
-                workflowId: instance.workflowId,
-                instanceId: instance.instanceId,
-                nodeId: node.id,
-                status: "waiting",
-                traceId: instance.traceId,
-                data: { timeoutMs: node.timeout },
-              }),
-            );
+          if (node.type === "wait") {
+            const waitMs = resolveWaitDurationMs(node);
+            if (waitMs !== undefined) {
+              void hookManager.emit(
+                createHookPayload({
+                  event: "node.waiting",
+                  workflowId: instance.workflowId,
+                  instanceId: instance.instanceId,
+                  nodeId: node.id,
+                  status: "waiting",
+                  traceId: instance.traceId,
+                  data: { timeoutMs: waitMs },
+                }),
+              );
+            }
           }
 
           const onComplete = async (nextNodes: string[]) => {

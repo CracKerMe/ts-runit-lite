@@ -11,7 +11,9 @@ export type TaskType =
   | "router"
   | "loop"
   | "approval"
-  | "notification";
+  | "notification"
+  | "join"
+  | "transform";
 
 import type { RetryPolicy } from "./RetryPolicy";
 
@@ -23,6 +25,10 @@ export interface TaskNode {
   // TODO: Create a branded WorkflowActionFn type once examples are updated.
   // oxlint-disable-next-line no-explicit-any -- see above rationale
   action?: (instance?: any) => Promise<any>;
+  /**
+   * wait 节点的相对等待时长（毫秒）。仍受支持，作为 config.durationMs 的
+   * 简写形式；同时设置时以 config 为准。
+   */
   timeout?: number;
   next?: string[];
   onEvent?: string;
@@ -54,7 +60,7 @@ export interface TaskNode {
   waitForCompletion?: boolean;
   /** 节点执行输出，用于后续节点引用 */
   output?: unknown;
-  /** 节点特定配置 config （如 http, sql, queue, condition, router, loop, llm, ai_router） */
+  /** 节点特定配置 config （如 http, sql, queue, condition, router, loop, join, transform） */
   config?: Record<string, unknown>;
   /**
    * 将该节点的执行路由到指定的命名任务队列（见 TaskQueueManager）。
@@ -106,4 +112,15 @@ export interface NotificationNodeConfig {
   subject?: string;
   severity?: "info" | "warning" | "critical";
   data?: Record<string, unknown>;
+}
+
+/**
+ * wait 节点配置。durationMs 与 until 二选一；同时设置时 until 优先。
+ * 未设置 config 时回退到 TaskNode.timeout（相对毫秒数）。
+ */
+export interface WaitNodeConfig {
+  /** 相对等待时长（毫秒） */
+  durationMs?: number;
+  /** 绝对到期时间（ISO 8601 字符串） */
+  until?: string;
 }

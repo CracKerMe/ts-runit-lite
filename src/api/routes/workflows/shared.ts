@@ -115,8 +115,9 @@ const NODE_TYPE_CATALOG: NodeTypeCatalogEntry[] = [
     type: "wait",
     label: "Wait",
     category: "core",
-    description: "Pauses the instance until `timeout` elapses.",
-    example: { timeout: 5000 },
+    description:
+      "Pauses the instance for `config.durationMs`, until `config.until` (an absolute ISO timestamp), or the legacy `timeout` field.",
+    example: { durationMs: 5000 },
   },
   {
     type: "event",
@@ -204,6 +205,22 @@ const NODE_TYPE_CATALOG: NodeTypeCatalogEntry[] = [
     description:
       "Waits for an approve/reject signal before branching (approvedTarget/rejectedTarget).",
     example: { prompt: "Approve this request?" },
+  },
+  {
+    type: "join",
+    label: "Join",
+    category: "control",
+    description:
+      "Waits for multiple fan-out branches (waitFor) to complete before proceeding — mode 'all' (default) requires every branch, 'any' proceeds once one has.",
+    example: { waitFor: ["branchA", "branchB"], mode: "all" },
+  },
+  {
+    type: "transform",
+    label: "Transform",
+    category: "control",
+    description:
+      "Reshapes prior node outputs into a new output object; each `output` field is an expression, evaluated (not string-interpolated) so numbers/arrays/objects keep their type.",
+    example: { output: { total: "${node1.output.price * node1.output.qty}" } },
   },
 ];
 
