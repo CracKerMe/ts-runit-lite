@@ -1,6 +1,7 @@
 import { getAppConfig } from "../config/AppConfig";
 import { parseEnvInt } from "../utils/env";
 import { Logger } from "../utils/Logger";
+import { LockAcquisitionError } from "./errors";
 
 /**
  * 并发控制配置
@@ -154,7 +155,7 @@ export class ConcurrencyControl {
       timeout,
     );
     if (!acquired) {
-      throw new Error(`Failed to acquire lock for resource: ${resourceId}`);
+      throw new LockAcquisitionError(resourceId);
     }
 
     try {

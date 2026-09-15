@@ -12,6 +12,20 @@ import type { WorkflowEngineV2 } from "./engine/WorkflowEngineV2";
 
 export type { ApiServerConfig };
 
+/**
+ * Mountable Express router for the workflow API — for embedding into a host
+ * app's own Express instance instead of running the standalone server from
+ * `startApiServer`. Loaded lazily so importing this module never pulls in
+ * `express` as a side effect.
+ */
+export async function createWorkflowRouter(
+  ...args: Parameters<typeof import("./api/router").createWorkflowRouter>
+): Promise<ReturnType<typeof import("./api/router").createWorkflowRouter>> {
+  const router = await import("./api/router");
+  return router.createWorkflowRouter(...args);
+}
+export type { WorkflowRouterBundle, WorkflowRouterOptions } from "./api/router";
+
 /** Load the REST server only when it is explicitly requested. */
 export async function startApiServer(
   engine: WorkflowEngineV2,
@@ -71,6 +85,12 @@ export {
   type WaitForCompletionOptions,
   WorkflowEngineV2,
 } from "./engine/WorkflowEngineV2";
+export {
+  ConcurrencyConflictError,
+  InstanceNotFoundError,
+  LockAcquisitionError,
+  WorkflowNotFoundError,
+} from "./engine/errors";
 export { eventBus } from "./event/EventBus";
 export {
   createHookPayload,
@@ -83,6 +103,41 @@ export {
 export * from "./model/Instance";
 export * from "./model/Workflow";
 export * from "./notification/index";
+// 节点执行器配置/输出类型（http/sql/queue/condition/router/loop），
+// 供外部项目在构建 TaskNode.config 时获得类型提示，而不必去翻源码。
+export type {
+  ConditionNodeConfig,
+  ConditionNodeOutput,
+} from "./engine/executors/ConditionNodeExecutor";
+export type {
+  HttpNodeConfig,
+  HttpNodeOutput,
+} from "./engine/executors/HttpNodeExecutor";
+export {
+  type LoopNodeConfig,
+  type LoopNodeOutput,
+} from "./engine/executors/LoopNodeExecutor";
+export {
+  getQueueProvider,
+  type QueueNodeConfig,
+  type QueueNodeOutput,
+  type QueueProvider,
+  registerQueueProvider,
+  unregisterQueueProvider,
+} from "./engine/executors/QueueNodeExecutor";
+export {
+  type RouterNodeConfig,
+  type RouterNodeOutput,
+  type RouterRoute,
+} from "./engine/executors/RouterNodeExecutor";
+export {
+  getSqlConnectionPool,
+  registerSqlConnectionPool,
+  type SqlConnectionPool,
+  type SqlNodeConfig,
+  type SqlNodeOutput,
+  unregisterSqlConnectionPool,
+} from "./engine/executors/SqlNodeExecutor";
 export type {
   TemplateInstanceRequest,
   TemplateParameter,

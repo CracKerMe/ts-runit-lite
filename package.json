@@ -59,6 +59,8 @@
     "test:data-processing": "tsx src/test/data-processing-workflow.ts",
     "example:quickstart": "tsx examples/quickstart.ts",
     "example:order": "tsx examples/order-processing.ts",
+    "example:embedded-express": "tsx examples/embedded-express-app.ts",
+    "example:error-handling": "tsx examples/error-handling.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
