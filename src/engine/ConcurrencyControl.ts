@@ -129,7 +129,7 @@ export class ConcurrencyControl {
       if (await this.acquireLock(resourceId, holderId, timeout)) {
         return true;
       }
-      await this.delay(this.config.retryDelay);
+      await this.delay(this.backoffDelay(i));
     }
 
     Logger.warn(
@@ -198,7 +198,7 @@ export class ConcurrencyControl {
       if (this.acquireSemaphore(name, maxConcurrent)) {
         return true;
       }
-      await this.delay(this.config.retryDelay);
+      await this.delay(this.backoffDelay(i));
     }
     return false;
   }
@@ -268,6 +268,23 @@ export class ConcurrencyControl {
       Logger.debug("system", "lock", `Cleaned up ${cleaned} expired locks`);
     }
   }
+
+  /**
+   * 计算第 attempt 次重试的退避时长（指数 + 抖动）。
+   *
+   * 此前是固定间隔：默认 maxRetries=50、retryDelay=100，K 个等待者会以
+   * 完全相同的节奏同时醒来抢同一把锁，一个成功、K-1 个立刻再睡——
+   * 典型的惊群。指数退避把重试拉开，抖动把同频唤醒打散。
+   */
+  private backoffDelay(attempt: number): number {
+    const base = this.config.retryDelay * 2 ** Math.min(attempt, 6);
+    const capped = Math.min(base, ConcurrencyControl.MAX_RETRY_DELAY_MS);
+    // 全抖动的一半：保底等待 50%，其余随机
+    return Math.round(capped * (0.5 + Math.random() * 0.5));
+  }
+
+  /** 单次重试等待的上限，避免指数增长到不可接受的时长。 */
+  private static readonly MAX_RETRY_DELAY_MS = 2000;
 
   /**
    * 延迟辅助函数

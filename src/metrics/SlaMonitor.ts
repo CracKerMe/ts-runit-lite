@@ -66,6 +66,10 @@ export class SlaMonitor extends EventEmitter {
   start(_instanceProvider: () => Promise<any[]>): void {
     // Check every minute
     this.checkInterval = setInterval(() => {
+      // 顺带清理过期违规记录：clearOldViolations() 此前在 src/ 内零调用，
+      // violations 数组只增不减，长期运行的进程会无限累积。
+      this.clearOldViolations();
+
       this.evaluate().catch((err) => {
         Logger.error(
           "system",

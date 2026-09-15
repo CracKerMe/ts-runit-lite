@@ -11,7 +11,7 @@ export interface HttpNodeConfig {
   url: string; // Supports expressions
   headers?: Record<string, string>; // Supports expressions in values
   body?: any; // Supports expressions
-  timeout?: number; // Request timeout in milliseconds
+  timeout?: number; // Request timeout in milliseconds (default: 30000)
   retryPolicy?: {
     maxRetries: number;
     backoff: "linear" | "exponential";
@@ -19,6 +19,8 @@ export interface HttpNodeConfig {
   };
   followRedirects?: boolean; // Default: true
   validateStatus?: (status: number) => boolean; // Custom status validation
+  /** 响应体大小上限（字节），默认 10 MiB。超限抛错而非把整个响应读进内存。 */
+  maxResponseBytes?: number;
 }
 
 /**
@@ -39,18 +41,98 @@ export interface HttpNodeOutput {
  * Includes timeout and retry policy support
  */
 /**
+ * 未显式配置 timeout 时使用的默认请求超时。
+ *
+ * 此前不配 timeout 就完全不设 AbortController，fetch 可以无限期挂起，
+ * 把工作流实例永久钉死在这个节点上。没有超时不是一个合理的默认值。
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * 响应体大小上限（字节）。
+ *
+ * 此前直接 `await response.json()` / `.text()`，既不检查 Content-Length
+ * 也不做流式截断——恶意或异常的端点返回超大响应体会直接 OOM 掉进程。
+ */
+const DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024; // 10 MiB
+
+/** 退避上限，避免指数退避算出过长的等待。 */
+const MAX_BACKOFF_DELAY_MS = 30_000;
+
+/**
  * Calculate backoff delay for retries
+ *
+ * 加入抖动：固定退避会让并发实例在同一时刻齐刷刷重试同一个故障端点
+ * （惊群）。抖动把重试打散到 [50%, 100%] 区间。
  */
 function calculateBackoffDelay(
   attempt: number,
   backoff: "linear" | "exponential",
   initialDelay: number,
 ): number {
-  if (backoff === "exponential") {
-    return initialDelay * 2 ** (attempt - 1);
+  const base =
+    backoff === "exponential"
+      ? initialDelay * 2 ** (attempt - 1)
+      : initialDelay * attempt;
+
+  const capped = Math.min(base, MAX_BACKOFF_DELAY_MS);
+  // 全抖动的一半：保底等待 50%，其余随机，既打散又不会退化成立即重试
+  return Math.round(capped * (0.5 + Math.random() * 0.5));
+}
+
+/**
+ * 在读取响应体时强制执行大小上限。
+ *
+ * 先看 Content-Length 快速拒绝；该头缺失或撒谎时（分块传输就没有这个头），
+ * 再按流累计字节数，超限即中止——不能等到整个响应落到内存里才发现。
+ */
+async function assertContentLengthWithinLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<void> {
+  const declared = response.headers.get("content-length");
+  if (!declared) return;
+
+  const size = Number(declared);
+  if (Number.isFinite(size) && size > maxBytes) {
+    throw new Error(
+      `HTTP response body too large: ${size} bytes exceeds the ${maxBytes} byte limit`,
+    );
   }
-  // Linear backoff
-  return initialDelay * attempt;
+}
+
+async function readBodyWithLimit(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  await assertContentLengthWithinLimit(response, maxBytes);
+
+  const reader = response.body!.getReader();
+  const decoder = new TextDecoder();
+  const chunks: string[] = [];
+  let total = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value) continue;
+
+      total += value.byteLength;
+      if (total > maxBytes) {
+        throw new Error(
+          `HTTP response body too large: exceeded the ${maxBytes} byte limit`,
+        );
+      }
+      chunks.push(decoder.decode(value, { stream: true }));
+    }
+    chunks.push(decoder.decode());
+  } finally {
+    // 提前中止时释放底层连接，避免连接泄漏
+    reader.cancel().catch(() => {});
+  }
+
+  return chunks.join("");
 }
 
 /**
@@ -67,9 +149,9 @@ async function executeRequest(
   config: HttpNodeConfig,
 ): Promise<Omit<HttpNodeOutput, "duration">> {
   const controller = new AbortController();
-  const timeoutId = config.timeout
-    ? setTimeout(() => controller.abort(), config.timeout)
-    : null;
+  // 永远设置超时：不配 timeout 时用默认值，而不是不设上限。
+  const effectiveTimeout = config.timeout ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const timeoutId = setTimeout(() => controller.abort(), effectiveTimeout);
 
   try {
     // Prepare request options
@@ -110,21 +192,38 @@ async function executeRequest(
       );
     }
 
-    // Parse response body
+    // Parse response body（统一经过大小上限保护后再解析）
     const contentType = response.headers.get("content-type") || "";
+    const maxBytes = config.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
+    const isJson = contentType.includes("application/json");
     let body: any;
 
-    if (contentType.includes("application/json")) {
-      try {
-        body = await response.json();
-      } catch {
+    if (response.body?.getReader) {
+      // 正常路径：流式读取并强制大小上限
+      const rawBody = await readBodyWithLimit(response, maxBytes);
+      if (isJson) {
+        try {
+          body = JSON.parse(rawBody);
+        } catch {
+          body = rawBody;
+        }
+      } else {
+        // 文本与二进制统一按文本返回，保持原有行为
+        body = rawBody;
+      }
+    } else {
+      // 无可读流（HEAD 响应、非标准 Response 实现）：
+      // Content-Length 检查已在上面生效，这里直接用原生解析。
+      await assertContentLengthWithinLimit(response, maxBytes);
+      if (isJson) {
+        try {
+          body = await response.json();
+        } catch {
+          body = await response.text();
+        }
+      } else {
         body = await response.text();
       }
-    } else if (contentType.includes("text/")) {
-      body = await response.text();
-    } else {
-      // For binary data, return as text or could be extended to handle buffers
-      body = await response.text();
     }
 
     // Convert headers to plain object

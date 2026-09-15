@@ -139,15 +139,24 @@ export class InstanceManager {
       let currentVersion = instance.version ?? 1;
       let lastKnownGood: WorkflowInstance | undefined;
 
+      let attempt = 0;
       while (retries-- > 0) {
         try {
-          instance.version = currentVersion;
-          const success = await this.storage.casUpdateInstance(instance);
+          // 在副本上设置版本号，不要改写调用方的对象：CAS 失败后，
+          // 调用方持有的引用会带着一个从未持久化的 version，而下面的
+          // lastKnownGood 回滚只能修 Map 条目，修不了那个悬空引用。
+          const candidate: WorkflowInstance = {
+            ...instance,
+            version: currentVersion,
+          };
+          const success = await this.storage.casUpdateInstance(candidate);
           if (success) {
             // CAS 成功：写入存储时用的是 currentVersion，存储侧会将其递增为 currentVersion+1
             // 内存中同步为相同的新版本，避免内存与存储分叉
+            candidate.version = currentVersion + 1;
+            // 成功后才把版本号写回调用方对象，使其与已持久化的状态一致
             instance.version = currentVersion + 1;
-            this.instances.set(instance.instanceId, instance);
+            this.instances.set(candidate.instanceId, candidate);
             return; // CAS 成功，退出
           }
 
@@ -166,6 +175,13 @@ export class InstanceManager {
             // 如果重试最终耗尽，内存缓存要回退到这里，而不是停在本次失败、从未持久化的版本上
             lastKnownGood = freshInstance;
             currentVersion = freshInstance.version ?? 1;
+          }
+
+          // 退让一小段带抖动的时间再重试。此前三次 CAS 背靠背在同一个
+          // tick 内发出，竞争方的写入根本来不及落地，重试必然全部失败，
+          // 整个重试机制退化成"必定抛 ConcurrencyConflictError"。
+          if (retries > 0) {
+            await this.casBackoff(attempt++);
           }
         } catch (error) {
           Logger.error(
@@ -193,6 +209,16 @@ export class InstanceManager {
       );
       throw new ConcurrencyConflictError(instance.instanceId, maxRetries);
     }
+  }
+
+  /**
+   * CAS 重试之间的退让：指数增长 + 抖动，让竞争方的写入有机会落地。
+   * 基数刻意取得很小（2ms）——这是进程内的内存竞争，不是网络往返。
+   */
+  private casBackoff(attempt: number): Promise<void> {
+    const base = 2 * 2 ** Math.min(attempt, 4);
+    const delay = Math.round(base * (0.5 + Math.random() * 0.5));
+    return new Promise((resolve) => setTimeout(resolve, delay));
   }
 
   /**

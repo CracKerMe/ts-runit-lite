@@ -98,14 +98,31 @@ export function getSqlConnectionPool(
  * Supports parameterized queries and timeout
  */
 /**
- * Create a timeout promise that rejects after specified milliseconds
+ * 为一个 Promise 附加超时，并在竞态结束后**清除定时器**。
+ *
+ * 此前 `Promise.race([work, createTimeoutPromise(ms)])` 的 setTimeout 句柄
+ * 从不保存也从不 clear：查询先返回时定时器仍然挂着并持有整个闭包，高负载
+ * 下会持续累积活跃定时器，并把进程退出推迟最多一个 timeout 时长。
+ *
+ * 注意这**不会**取消底层查询——Promise.race 的败者仍在跑，连接也仍被占用。
+ * 真正的取消需要驱动层支持，这里只保证定时器本身不泄漏。
  */
-function createTimeoutPromise(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`SQL query timeout after ${ms}ms`));
-    }, ms);
+async function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timeoutId: NodeJS.Timeout | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
   });
+
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -123,10 +140,11 @@ async function executeWithTimeout(
   }
 
   // Execute with timeout
-  return await Promise.race([
+  return await withTimeout(
     pool.query(query, parameters),
-    createTimeoutPromise(timeout),
-  ]);
+    timeout,
+    `SQL query timeout after ${timeout}ms`,
+  );
 }
 
 /**

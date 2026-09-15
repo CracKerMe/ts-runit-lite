@@ -55,9 +55,21 @@ export class EventBus {
 
   /**
    * 释放底层资源（分布式实现关闭订阅连接时使用）
+   *
+   * 必须清空 handlers：此前 close() 是空操作，destroyContainer() 之后
+   * 所有监听器及其闭包捕获的对象（引擎、存储……）仍被 EventBus 持有，
+   * 整张对象图无法回收。
    */
   async close(): Promise<void> {
-    // 内存实现无需释放资源
+    this.handlers = {};
+  }
+
+  /** 已注册的监听器总数。用于测试与内存诊断。 */
+  listenerCount(): number {
+    return Object.values(this.handlers).reduce(
+      (total, list) => total + list.length,
+      0,
+    );
   }
 }
 

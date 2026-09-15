@@ -94,12 +94,28 @@ export function getQueueProvider(name: string): QueueProvider | undefined {
 /**
  * Create a timeout promise that rejects after specified milliseconds
  */
-function createTimeoutPromise(ms: number): Promise<never> {
-  return new Promise((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Queue consume timeout after ${ms}ms`));
-    }, ms);
+/**
+ * 为一个 Promise 附加超时，并在竞态结束后**清除定时器**。
+ *
+ * 此前 setTimeout 句柄从不保存也从不 clear：消费先返回时定时器仍然挂着
+ * 并持有整个闭包，高负载下持续累积，并把进程退出推迟最多一个 timeout。
+ */
+async function withTimeout<T>(
+  work: Promise<T>,
+  ms: number,
+  message: string,
+): Promise<T> {
+  let timeoutId: NodeJS.Timeout | undefined;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
   });
+
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -127,10 +143,11 @@ async function executeConsume(
   }
 
   // Execute with timeout
-  return await Promise.race([
+  return await withTimeout(
     provider.consume(queue, timeout),
-    createTimeoutPromise(timeout),
-  ]);
+    timeout,
+    `Queue consume timeout after ${timeout}ms`,
+  );
 }
 
 /**

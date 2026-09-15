@@ -305,12 +305,18 @@ export class WorkflowEngineV2 {
     if (!workflow) {
       throw new WorkflowNotFoundError(instance.workflowId);
     }
-    if (!instance.workflowVersion && resolvedVersion) {
-      instance.workflowVersion = resolvedVersion;
-      await this.instanceManager.updateInstance(instance);
-    }
     const startTime = Date.now();
     await this.withInstanceLease(instance.instanceId, async () => {
+      // 版本固化必须在拿到 lease **之后**执行。
+      // 此前它发生在 lease 之前：两条恢复路径同时接管一个孤儿实例时，
+      // 双方都会先写 workflowVersion，其中一方的 CAS 必然冲突并抛出
+      // ConcurrencyConflictError，一路传播到 resumeRunningInstances 的
+      // catch 里，把一个完全健康、正由对方合法执行的实例推进 DLQ。
+      if (!instance.workflowVersion && resolvedVersion) {
+        instance.workflowVersion = resolvedVersion;
+        await this.instanceManager.updateInstance(instance);
+      }
+
       try {
         // 使用 ExecutionOrchestrator 执行工作流
         await this.executionOrchestrator.execute(instance, workflow);
@@ -389,10 +395,18 @@ export class WorkflowEngineV2 {
     );
   }
 
+  /**
+   * 在实例 lease 保护下执行 fn。
+   *
+   * 返回 `T | undefined`：拿不到 lease 时不会执行 fn，自然也没有返回值。
+   * 此前签名写的是 `Promise<T>` 并用 `undefined as T` 强行搪塞，等于对
+   * 每个调用方撒谎——类型检查器不会对 `result.field` 报错，运行时却是
+   * TypeError。
+   */
   private async withInstanceLease<T>(
     instanceId: string,
     fn: () => Promise<T>,
-  ): Promise<T> {
+  ): Promise<T | undefined> {
     const key = this.getInstanceLeaseKey(instanceId);
     const acquired = await this.leaseStore.acquire(
       key,
@@ -406,7 +420,7 @@ export class WorkflowEngineV2 {
         "Instance lease not acquired, skipping execution",
         { key },
       );
-      return undefined as T;
+      return undefined;
     }
 
     let renewTimer: NodeJS.Timeout | undefined;
