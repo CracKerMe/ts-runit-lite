@@ -1,7 +1,7 @@
 // oxlint-disable no-explicit-any -- dynamic types used throughout this module
 import { DeadLetterQueue } from "../dlq/index";
 import { parseDSL } from "../dsl/DSLParser";
-import { WorkflowEngineV2 } from "../engine/WorkflowEngineV2";
+import { WorkflowEngine } from "../engine/WorkflowEngine";
 import { EventBus } from "../event/EventBus";
 import type { WorkflowInstance } from "../model/Instance";
 import type { TaskNode, WorkflowDefinition } from "../model/Workflow";
@@ -65,7 +65,7 @@ export interface TestWorkflowResult {
   history: WorkflowInstance["history"];
   failureSnapshot?: WorkflowFailureSnapshot;
   storage: MemoryStorage;
-  engine: WorkflowEngineV2;
+  engine: WorkflowEngine;
   getOutput: <T = unknown>(nodeId: string) => T | undefined;
   expectStatus: (status: WorkflowInstance["status"]) => TestWorkflowResult;
   expectCompleted: () => TestWorkflowResult;
@@ -178,7 +178,7 @@ export async function testWorkflow(
   const eventBus = new EventBus();
   const scheduler = new CronScheduler(storage);
   const dlq = new DeadLetterQueue(storage);
-  const engine = new WorkflowEngineV2(storage, eventBus, scheduler, dlq, {
+  const engine = new WorkflowEngine(storage, eventBus, scheduler, dlq, {
     instanceTtlHours: 24,
     cleanupIntervalMs: 60_000,
     maxInstances: 100,
@@ -291,7 +291,7 @@ function resolveWorkflowDefinition(
 }
 
 async function cleanupResources(
-  engine: WorkflowEngineV2,
+  engine: WorkflowEngine,
   scheduler: CronScheduler,
   eventBus: EventBus,
   storage: MemoryStorage,

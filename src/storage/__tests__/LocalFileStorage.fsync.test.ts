@@ -11,7 +11,7 @@ describe("LocalFileStorage – fsyncOnWrite option", () => {
   let storage: LocalFileStorage | undefined;
 
   beforeEach(() => {
-    directory = fs.mkdtempSync(path.join(os.tmpdir(), "ts-runit-fsync-"));
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "tswe-fsync-"));
   });
 
   afterEach(async () => {

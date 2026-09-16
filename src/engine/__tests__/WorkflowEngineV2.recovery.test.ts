@@ -4,7 +4,7 @@ import { HeartbeatManager } from "../HeartbeatManager";
 import { InstanceManager } from "../InstanceManager";
 import { LifecycleManager } from "../LifecycleManager";
 
-describe("WorkflowEngineV2 - Crash Recovery", () => {
+describe("WorkflowEngine - Crash Recovery", () => {
   let storage: MemoryStorage;
 
   beforeEach(async () => {

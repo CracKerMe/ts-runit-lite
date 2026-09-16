@@ -182,7 +182,9 @@ export async function flush(): Promise<void> {
 // （例如测试里的 vi.resetModules() + 动态 import），每次加载都会重新
 // 执行顶层代码，若不加标记会不断堆积新的 "exit" 监听器，触发
 // MaxListenersExceededWarning。
-const EXIT_LISTENER_FLAG = Symbol.for("ts-runit-lite.logger.exitListener");
+const EXIT_LISTENER_FLAG = Symbol.for(
+  "ts-workflow-engine-lite.logger.exitListener",
+);
 type ProcessWithLoggerFlag = typeof process & {
   [EXIT_LISTENER_FLAG]?: boolean;
 };

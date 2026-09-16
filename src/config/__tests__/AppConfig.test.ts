@@ -17,7 +17,7 @@ describe("AppConfigSchema", () => {
 
     expect(config.storage).toEqual({
       type: "file",
-      directory: ".ts-runit-data",
+      directory: ".ts-workflow-engine-data",
       fsyncOnWrite: false,
     });
     expect(config.archive).toEqual({

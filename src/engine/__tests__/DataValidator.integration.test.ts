@@ -4,10 +4,10 @@ import type { AppContainer } from "../../container";
 import { destroyContainer } from "../../container";
 import type { WorkflowDefinition } from "../../model/Workflow";
 import { DataValidationError } from "../DataValidator";
-import type { WorkflowEngineV2 } from "../WorkflowEngineV2";
+import type { WorkflowEngine } from "../WorkflowEngine";
 
 describe("Schema validation on engine.start", () => {
-  let engine: WorkflowEngineV2;
+  let engine: WorkflowEngine;
   let container: AppContainer;
   const originalMode = process.env.SCHEMA_VALIDATION;
 

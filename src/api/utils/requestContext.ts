@@ -1,19 +1,17 @@
 // oxlint-disable no-explicit-any -- dynamic types used throughout this module
 import type { Request } from "express";
-import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 import type { StorageProvider } from "../../storage/StorageProvider";
 import type { EventHistoryManager } from "../EventHistory";
 import type { WebhookManager } from "../WebhookManager";
 
 type ApiRequest = Request<any, any, any, any>;
 
-export function getRequestEngine(
-  req: ApiRequest,
-): WorkflowEngineV2 | undefined {
+export function getRequestEngine(req: ApiRequest): WorkflowEngine | undefined {
   return req.engine;
 }
 
-export function requireRequestEngine(req: ApiRequest): WorkflowEngineV2 {
+export function requireRequestEngine(req: ApiRequest): WorkflowEngine {
   if (!req.engine) {
     throw new Error("Engine not available");
   }

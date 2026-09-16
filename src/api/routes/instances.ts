@@ -10,7 +10,7 @@ import {
   type SearchAttributeValue,
   searchAttributeManager,
 } from "../../engine/SearchAttributeManager";
-import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 import type { ExecutionLog, WorkflowInstance } from "../../model/Instance";
 import type { WorkflowDefinition } from "../../model/Workflow";
 import type { StorageProvider } from "../../storage/StorageProvider";
@@ -25,13 +25,13 @@ const router: Router = express.Router();
 
 // --- Service factory ---
 function getService(req: Request): InstanceApplicationService {
-  const engine = getRequestEngine(req) as WorkflowEngineV2;
+  const engine = getRequestEngine(req) as WorkflowEngine;
   const storage = getRequestStorage(req) ?? null;
   return new InstanceApplicationService(engine, storage);
 }
 
-type Engine = WorkflowEngineV2;
-type EngineWithLifecycleControls = WorkflowEngineV2 & {
+type Engine = WorkflowEngine;
+type EngineWithLifecycleControls = WorkflowEngine & {
   pauseInstance?: (instanceId: string) => Promise<boolean>;
   resumeInstance?: (instanceId: string) => Promise<boolean>;
   cancelInstance?: (instanceId: string) => Promise<boolean>;

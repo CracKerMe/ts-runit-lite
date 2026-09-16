@@ -3,10 +3,10 @@ import { bootstrap } from "../../bootstrap";
 import type { AppContainer } from "../../container";
 import { destroyContainer } from "../../container";
 import type { WorkflowDefinition } from "../../model/Workflow";
-import type { WorkflowEngineV2 } from "../WorkflowEngineV2";
+import type { WorkflowEngine } from "../WorkflowEngine";
 
 describe("Instance Control Operations", () => {
-  let engine: WorkflowEngineV2;
+  let engine: WorkflowEngine;
   let container: AppContainer;
 
   beforeEach(async () => {

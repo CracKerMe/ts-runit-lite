@@ -209,7 +209,7 @@ export function generateWelcomeHtml(port: number): string {
       <a href="/docs/concepts">核心概念文档</a>
       <a href="/api-docs/openapi.json">OpenAPI JSON</a>
       <a href="/workflow-api/v1/health">健康检查</a>
-      <a href="https://github.com/CracKerMe/ts-runit-lite" target="_blank" rel="noopener">GitHub 仓库</a>
+      <a href="https://github.com/CracKerMe/ts-workflow-engine-lite" target="_blank" rel="noopener">GitHub 仓库</a>
     </div>
   </section>
 
@@ -262,7 +262,7 @@ ${nodeRows}
       </a>
       <a class="card" href="/docs/concepts#storage">
         <h3>本地文件持久化</h3>
-        <p>默认使用 LocalFileStorage，数据保存在 <code>.ts-runit-data/</code>，支持重启恢复，可选 <code>FSYNC_ON_WRITE</code> 换取更强的持久性。</p>
+        <p>默认使用 LocalFileStorage，数据保存在 <code>.ts-workflow-engine-data/</code>，支持重启恢复，可选 <code>FSYNC_ON_WRITE</code> 换取更强的持久性。</p>
       </a>
       <a class="card" href="/docs/concepts#join-transform">
         <h3>join / transform 节点</h3>

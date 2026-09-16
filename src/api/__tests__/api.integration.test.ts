@@ -11,7 +11,7 @@
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DeadLetterQueue } from "../../dlq/DeadLetterQueue";
-import { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import { WorkflowEngine } from "../../engine/WorkflowEngine";
 import { EventBus } from "../../event/EventBus";
 import { getMetrics, recordApiRequest } from "../../metrics/index";
 import type { WorkflowInstance } from "../../model/Instance";
@@ -22,17 +22,17 @@ import type { StoredWorkflow } from "../../storage/StorageProvider";
 
 describe("API Integration Tests", () => {
   let storage: MemoryStorage;
-  let engine: WorkflowEngineV2;
+  let engine: WorkflowEngine;
   let scheduler: CronScheduler;
 
   async function createEngineV2(
     storageProvider: MemoryStorage,
-  ): Promise<WorkflowEngineV2> {
+  ): Promise<WorkflowEngine> {
     const eventBus = new EventBus();
     scheduler = new CronScheduler(storageProvider);
     const dlq = new DeadLetterQueue(storageProvider);
 
-    const v2Engine = new WorkflowEngineV2(
+    const v2Engine = new WorkflowEngine(
       storageProvider,
       eventBus,
       scheduler,
@@ -265,7 +265,7 @@ describe("API Integration Tests", () => {
   });
 
   describe("Instance Query Operations with Large Datasets", () => {
-    let queryEngine: WorkflowEngineV2;
+    let queryEngine: WorkflowEngine;
     let queryStorage: MemoryStorage;
     let queryScheduler: CronScheduler;
 
@@ -275,7 +275,7 @@ describe("API Integration Tests", () => {
       await queryStorage.connect();
 
       queryScheduler = new CronScheduler(queryStorage);
-      queryEngine = new WorkflowEngineV2(
+      queryEngine = new WorkflowEngine(
         queryStorage,
         new EventBus(),
         queryScheduler,

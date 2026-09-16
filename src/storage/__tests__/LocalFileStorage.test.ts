@@ -32,7 +32,7 @@ describe("LocalFileStorage", () => {
   let storage: LocalFileStorage;
 
   beforeEach(async () => {
-    directory = fs.mkdtempSync(path.join(os.tmpdir(), "ts-runit-storage-"));
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "tswe-storage-"));
     storage = new LocalFileStorage(directory);
     await storage.connect();
   });

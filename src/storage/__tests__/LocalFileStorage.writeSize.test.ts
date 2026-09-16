@@ -11,7 +11,7 @@ describe("LocalFileStorage – persisted payload size", () => {
   const savedMax = process.env.MAX_INSTANCE_HISTORY;
 
   beforeEach(async () => {
-    directory = fs.mkdtempSync(path.join(os.tmpdir(), "ts-runit-size-"));
+    directory = fs.mkdtempSync(path.join(os.tmpdir(), "tswe-size-"));
     storage = new LocalFileStorage(directory);
     await storage.connect();
   });

@@ -212,7 +212,7 @@ export function generateConceptsDocHtml(port: number): string {
 }</code></pre>
     <div class="callout">
       引用不存在的节点或字段时不会抛出异常，而是解析为 <code>undefined</code> 并记录一条 warn 日志（详见
-      <code>resolveNodeOutput</code>，<a href="https://github.com/CracKerMe/ts-runit-lite/blob/main/src/engine/ExpressionEvaluator.ts" target="_blank" rel="noopener">ExpressionEvaluator.ts</a>）。
+      <code>resolveNodeOutput</code>，<a href="https://github.com/CracKerMe/ts-workflow-engine-lite/blob/main/src/engine/ExpressionEvaluator.ts" target="_blank" rel="noopener">ExpressionEvaluator.ts</a>）。
       调试时可查看该节点日志确认输出结构是否符合预期。
     </div>
     <p>普通上下文变量（工作流启动时传入的 <code>input</code>）同样用 <code>\${variable}</code> 或 <code>\${context.path}</code> 语法引用，与节点输出引用可以混用在同一个字符串模板中。</p>
@@ -275,7 +275,7 @@ ${fnRows}
 
   <section id="storage">
     <h2>本地文件持久化</h2>
-    <p>非测试环境默认使用 <code>LocalFileStorage</code>，数据目录由 <code>STORAGE_DIR</code> 指定（默认 <code>.ts-runit-data/</code>）。
+    <p>非测试环境默认使用 <code>LocalFileStorage</code>，数据目录由 <code>STORAGE_DIR</code> 指定（默认 <code>.ts-workflow-engine-data/</code>）。
     每条记录独立保存为 JSON 文件，通过临时文件 + 原子 rename 更新，避免写入过程中数据损坏。</p>
     <p>数据按 <code>instances</code>、<code>workflows</code>、<code>workflow-versions</code>、<code>waiting</code>、<code>metrics</code>、<code>events</code>、<code>heartbeats</code>、<code>dlq</code> 等目录分类；
     启动时无法解析的记录会被隔离到对应分类下的 <code>corrupt/</code> 目录，不阻断其余数据恢复。</p>
@@ -328,7 +328,7 @@ ${fnRows}
     <p><code>transform</code>：通过类型化表达式求值重塑节点输出（而非字符串插值），数字/数组/对象保持原生类型，不强制转成字符串。</p>
     <p><code>wait</code> 节点新增 <code>config.durationMs</code> / <code>config.until</code>（绝对截止时间）作为相对时长/绝对时间的显式写法，
     优先级高于旧的顶层 <code>timeout</code> 字段。</p>
-    <p>字段详情见 <a href="https://github.com/CracKerMe/ts-runit-lite/blob/main/docs/NODE_REFERENCE.md" target="_blank" rel="noopener">docs/NODE_REFERENCE.md</a> 的
+    <p>字段详情见 <a href="https://github.com/CracKerMe/ts-workflow-engine-lite/blob/main/docs/NODE_REFERENCE.md" target="_blank" rel="noopener">docs/NODE_REFERENCE.md</a> 的
     <code>join</code>/<code>transform</code>/<code>wait</code> 章节。</p>
   </section>
 

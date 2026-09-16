@@ -62,6 +62,15 @@
     "example:order": "tsx examples/order-processing.ts",
     "example:embedded-express": "tsx examples/embedded-express-app.ts",
     "example:error-handling": "tsx examples/error-handling.ts",
+    "example:multi-tenant": "tsx examples/multi-tenant-workflow.ts",
+    "example:approval": "tsx examples/approval-pipeline.ts",
+    "example:http": "tsx examples/http-orchestration.ts",
+    "example:cron-sync": "tsx examples/cron-data-sync.ts",
+    "example:parallel": "tsx examples/parallel-fan-out.ts",
+    "example:degradation": "tsx examples/graceful-degradation.ts",
+    "example:headless": "tsx examples/headless-engine.ts",
+    "example:worker-pool": "tsx examples/worker-pool.ts",
+    "example:headless-no-express": "tsx examples/headless-no-express.ts",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
@@ -74,19 +83,11 @@
   },
   "dependencies": {
     "axios": "^1.11.0",
-    "body-parser": "^2.2.0",
-    "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "express": "5.1.0",
-    "express-validator": "^7.2.1",
-    "helmet": "^8.1.0",
     "json-schema-to-zod": "^2.8.1",
     "jsonwebtoken": "^9.0.0",
-    "morgan": "^1.10.1",
     "node-cron": "^3.0.3",
-    "swagger-ui-dist": "^5.31.0",
     "uuid": "^11.1.0",
-    "ws": "^8.19.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
@@ -109,6 +110,42 @@
     "tsx": "^4.23.12",
     "typescript": "^5.0.0",
     "vitest": "^2.0.0"
+  },
+  "peerDependencies": {
+    "body-parser": "^2.0.0",
+    "cors": "^2.8.0",
+    "express": "^5.0.0",
+    "express-validator": "^7.0.0",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "swagger-ui-dist": "^5.0.0",
+    "ws": "^8.0.0"
+  },
+  "peerDependenciesMeta": {
+    "body-parser": {
+      "optional": true
+    },
+    "cors": {
+      "optional": true
+    },
+    "express": {
+      "optional": true
+    },
+    "express-validator": {
+      "optional": true
+    },
+    "helmet": {
+      "optional": true
+    },
+    "morgan": {
+      "optional": true
+    },
+    "swagger-ui-dist": {
+      "optional": true
+    },
+    "ws": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=18.0.0"

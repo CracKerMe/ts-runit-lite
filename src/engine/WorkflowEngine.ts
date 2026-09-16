@@ -58,7 +58,7 @@ export interface WaitForCompletionOptions {
 /**
  * 工作流引擎 V2 - 支持依赖注入和模块化架构
  */
-export class WorkflowEngineV2 {
+export class WorkflowEngine {
   private instanceManager: InstanceManager;
   private workflowRegistry: WorkflowRegistry;
   private lifecycleManager: LifecycleManager;
@@ -680,7 +680,7 @@ export class WorkflowEngineV2 {
     this.heartbeatManager.stopAll();
     // 全局并发控制器的清理定时器此前无人负责，destroy() 后进程仍被钉住
     destroyConcurrencyControl();
-    Logger.info("system", "engine", "WorkflowEngineV2 destroyed");
+    Logger.info("system", "engine", "WorkflowEngine destroyed");
   }
 
   /**

@@ -6,19 +6,41 @@ export {
   type LocalFileStorageOptions,
 } from "./LocalFileStorage";
 export type {
+  CleanupStorage,
+  EventHistoryStorage,
   EventQueryParams,
   EventRecord,
   EventWaitingState,
+  FullStorageProvider,
+  HeartbeatStorage,
   InstanceMetrics,
   InstanceQueryParams,
+  MetricsStorage,
   NodeMetrics,
+  StorageCore,
   StorageProvider,
   StoredWorkflow,
+  StoredWorkflowVersion,
+  WebhookStorage,
+  WorkflowMetadataStorage,
 } from "./StorageProvider";
+export type { DlqStorage } from "./StorageProvider";
+export {
+  createStorageFromRegistry,
+  listStorageAdapters,
+  registerStorageAdapter,
+  type StorageFactory,
+  unregisterStorageAdapter,
+} from "./registry";
+export { registerBuiltinStorageAdapters } from "./builtin-adapters";
 
 import { MemoryStorage } from "./MemoryStorage";
 import { LocalFileStorage } from "./LocalFileStorage";
 import type { StorageProvider } from "./StorageProvider";
+
+/** @deprecated Use `.ts-workflow-engine-data` as the default directory. */
+const LEGACY_DEFAULT_DIR = ".ts-runit-data";
+const DEFAULT_DIR = ".ts-workflow-engine-data";
 
 /**
  * 创建存储实例
@@ -36,8 +58,32 @@ export async function createStorage(options?: {
     (process.env.NODE_ENV === "test" ? "memory" : "file");
 
   if (type === "file") {
-    const directory =
-      options?.directory ?? process.env.STORAGE_DIR ?? ".ts-runit-data";
+    let directory =
+      options?.directory ?? process.env.STORAGE_DIR ?? DEFAULT_DIR;
+
+    // Backward compatibility: detect legacy directory and warn
+    if (
+      directory === DEFAULT_DIR &&
+      !options?.directory &&
+      !process.env.STORAGE_DIR
+    ) {
+      try {
+        const fs = await import("node:fs");
+        if (fs.existsSync(LEGACY_DEFAULT_DIR) && !fs.existsSync(DEFAULT_DIR)) {
+          Logger.warn(
+            "system",
+            "storage",
+            `Legacy storage directory "${LEGACY_DEFAULT_DIR}" detected. ` +
+              `Rename it to "${DEFAULT_DIR}" or set STORAGE_DIR. ` +
+              `Run: npx tsx scripts/migrate-storage-dir.ts`,
+          );
+          directory = LEGACY_DEFAULT_DIR;
+        }
+      } catch {
+        // fs import failed — ignore, use default
+      }
+    }
+
     const fsyncOnWrite =
       options?.fsyncOnWrite ?? process.env.FSYNC_ON_WRITE === "true";
     Logger.info(

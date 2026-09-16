@@ -16,7 +16,7 @@ import {
 } from "./engine/SandboxEvaluator";
 import { stickyExecutionManager } from "./engine/StickyExecutionManager";
 import { initWorkerPool, shutdownWorkerPool } from "./engine/TaskExecutor";
-import { WorkflowEngineV2 } from "./engine/WorkflowEngineV2";
+import { WorkflowEngine } from "./engine/WorkflowEngine";
 import { setShutdownInstance, setupGracefulShutdown } from "./lifecycle";
 import { setupNotificationChannelsFromEnv } from "./notification/index";
 import { ArchiveManager } from "./storage/ArchiveManager";
@@ -44,7 +44,7 @@ export interface BootstrapOptions {
  */
 export interface AppContext {
   container: AppContainer;
-  engine: WorkflowEngineV2;
+  engine: WorkflowEngine;
 }
 
 /**
@@ -132,8 +132,8 @@ export async function bootstrap(
   }
 
   // 3. 创建工作流引擎
-  Logger.info("system", "bootstrap", "Using WorkflowEngineV2");
-  const engine = new WorkflowEngineV2(
+  Logger.info("system", "bootstrap", "Using WorkflowEngine");
+  const engine = new WorkflowEngine(
     container.storage,
     container.eventBus,
     container.scheduler,

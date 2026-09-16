@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootstrap } from "../../../bootstrap";
 import type { AppContainer } from "../../../container";
 import { destroyContainer } from "../../../container";
-import type { WorkflowEngineV2 } from "../../../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../../../engine/WorkflowEngine";
 import type { WorkflowDefinition } from "../../../model/Workflow";
 
 /**
@@ -12,7 +12,7 @@ import type { WorkflowDefinition } from "../../../model/Workflow";
  * 而这个错误又被内部 catch 悄悄吞掉、伪装成 { status: "completed" }。
  */
 describe("action node config.action string execution", () => {
-  let engine: WorkflowEngineV2;
+  let engine: WorkflowEngine;
   let container: AppContainer;
 
   beforeAll(async () => {

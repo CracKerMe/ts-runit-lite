@@ -11,7 +11,7 @@ import type { Server } from "http";
 import morgan from "morgan";
 import { WebSocketServer } from "ws";
 import { getAppConfig } from "../config/AppConfig";
-import type { WorkflowEngineV2 } from "../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../engine/WorkflowEngine";
 import { setHookDispatcher } from "../event/HookManager";
 import { recordApiRequest } from "../metrics/index";
 import type { StorageProvider } from "../storage/StorageProvider";
@@ -75,7 +75,7 @@ export async function closeApiServer(server: Server): Promise<void> {
  * 启动 API 服务器
  */
 export async function startApiServer(
-  engine: WorkflowEngineV2,
+  engine: WorkflowEngine,
   storage: StorageProvider | null = null,
   config: ApiServerConfig = {},
 ): Promise<Server> {

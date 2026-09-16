@@ -8,7 +8,7 @@
 import type { Server } from "node:http";
 import type { ApiServerConfig } from "./api/server";
 import type { StorageProvider } from "./storage/StorageProvider";
-import type { WorkflowEngineV2 } from "./engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "./engine/WorkflowEngine";
 
 export type { ApiServerConfig };
 
@@ -28,7 +28,7 @@ export type { WorkflowRouterBundle, WorkflowRouterOptions } from "./api/router";
 
 /** Load the REST server only when it is explicitly requested. */
 export async function startApiServer(
-  engine: WorkflowEngineV2,
+  engine: WorkflowEngine,
   storage: StorageProvider | null = null,
   config: ApiServerConfig = {},
 ): Promise<Server> {
@@ -83,8 +83,8 @@ export {
 // 导出核心模块供外部使用
 export {
   type WaitForCompletionOptions,
-  WorkflowEngineV2,
-} from "./engine/WorkflowEngineV2";
+  WorkflowEngine,
+} from "./engine/WorkflowEngine";
 export {
   ConcurrencyConflictError,
   InstanceNotFoundError,

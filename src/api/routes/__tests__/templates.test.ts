@@ -100,7 +100,7 @@ describe("templates routes", () => {
       ["absolute path to sensitive dir", "/var/root"],
       ["traversal mixed with a valid segment", "practices-demo/../../.."],
       ["null byte injection", "practices-demo\0/etc"],
-      ["sibling dir sharing the root prefix", "../ts-runit-lite-evil"],
+      ["sibling dir sharing the root prefix", "../tswe-evil"],
     ] as const;
 
     for (const [label, directory] of escapes) {

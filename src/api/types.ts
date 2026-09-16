@@ -1,6 +1,6 @@
 // oxlint-disable no-explicit-any -- dynamic types used throughout this module
 import type { DeadLetterQueue } from "../dlq/index";
-import type { WorkflowEngineV2 } from "../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../engine/WorkflowEngine";
 import type { HookPayload } from "../event/HookManager";
 import type { StorageProvider } from "../storage/StorageProvider";
 import type { ConsoleWebSocketManager } from "./ConsoleWebSocketManager";
@@ -128,7 +128,7 @@ export interface StartWorkflowDto {
 }
 
 export interface ApiRequestContext {
-  engine?: WorkflowEngineV2;
+  engine?: WorkflowEngine;
   storage?: StorageProvider | null;
   webhookManager?: WebhookManager;
   eventHistoryManager?: EventHistoryManager;

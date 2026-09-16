@@ -27,7 +27,7 @@ describe("ArchiveManager", () => {
   let manager: ArchiveManager;
 
   beforeEach(async () => {
-    archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), "ts-runit-archive-"));
+    archiveDir = fs.mkdtempSync(path.join(os.tmpdir(), "tswe-archive-"));
     storage = new MemoryStorage();
     await storage.connect();
     manager = new ArchiveManager(storage, archiveDir);

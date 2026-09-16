@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bootstrap } from "../../bootstrap";
 import type { WorkflowDefinition } from "../../model/Workflow";
-import { WorkflowEngineV2 } from "../WorkflowEngineV2";
+import { WorkflowEngine } from "../WorkflowEngine";
 
 /** Minimal single-node workflow that completes immediately */
 function makeSimpleWorkflow(id: string): WorkflowDefinition {
@@ -43,8 +43,8 @@ function makeTwoNodeWorkflow(id: string): WorkflowDefinition {
   };
 }
 
-describe("WorkflowEngineV2", () => {
-  let engine: WorkflowEngineV2;
+describe("WorkflowEngine", () => {
+  let engine: WorkflowEngine;
   let ctx: Awaited<ReturnType<typeof bootstrap>>;
 
   beforeEach(async () => {
@@ -74,7 +74,7 @@ describe("WorkflowEngineV2", () => {
         await ctx.container.storage.loadWorkflowWithMetadata("wf-persisted");
       expect(stored?.id).toBe("wf-persisted");
 
-      const restoredEngine = new WorkflowEngineV2(
+      const restoredEngine = new WorkflowEngine(
         ctx.container.storage,
         ctx.container.eventBus,
         ctx.container.scheduler,
@@ -256,7 +256,7 @@ describe("WorkflowEngineV2", () => {
 
       engine.destroy();
 
-      const restoredEngine = new WorkflowEngineV2(
+      const restoredEngine = new WorkflowEngine(
         ctx.container.storage,
         ctx.container.eventBus,
         ctx.container.scheduler,

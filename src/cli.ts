@@ -6,7 +6,7 @@
 
 import { closeApiServer, startApiServer } from "./api/server";
 import { bootstrap, loadEnv } from "./bootstrap";
-import type { WorkflowEngineV2 } from "./engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "./engine/WorkflowEngine";
 import { getShutdownInstance } from "./lifecycle";
 import { Logger } from "./utils/Logger";
 import { pathToFileURL } from "node:url";
@@ -30,7 +30,7 @@ export async function main(): Promise<void> {
     Logger.info("system", "api", "API server is running");
   } else if (process.env.RUN_DEMO !== "false") {
     const { runDemo } = await import("./demo/index");
-    await runDemo(engine as WorkflowEngineV2, container.eventBus);
+    await runDemo(engine as WorkflowEngine, container.eventBus);
   }
 
   Logger.info("system", "init", "Workflow engine started successfully");

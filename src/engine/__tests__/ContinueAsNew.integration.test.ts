@@ -3,12 +3,12 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bootstrap } from "../../bootstrap";
 import type { WorkflowDefinition } from "../../model/Workflow";
 import { searchAttributeManager } from "../SearchAttributeManager";
-import type { WorkflowEngineV2 } from "../WorkflowEngineV2";
+import type { WorkflowEngine } from "../WorkflowEngine";
 
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
 
 describe("Continue-As-New + Search Attributes wiring (integration)", () => {
-  let engine: WorkflowEngineV2;
+  let engine: WorkflowEngine;
   let ctx: Awaited<ReturnType<typeof bootstrap>>;
 
   beforeEach(async () => {

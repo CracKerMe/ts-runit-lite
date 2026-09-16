@@ -5,7 +5,7 @@
  * and debug operations. The route layer handles only HTTP concerns.
  */
 import { randomUUID } from "node:crypto";
-import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 import type { WorkflowInstance } from "../../model/Instance";
 import type { WorkflowDefinition } from "../../model/Workflow";
 import type {
@@ -82,7 +82,7 @@ export interface LifecycleResult {
 
 export class InstanceApplicationService {
   constructor(
-    private engine: WorkflowEngineV2,
+    private engine: WorkflowEngine,
     private storage: StorageProvider | null,
   ) {}
 

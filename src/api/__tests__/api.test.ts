@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { bootstrap } from "../../bootstrap";
 import type { AppContainer } from "../../container";
 import { destroyContainer } from "../../container";
-import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 
 /**
  * WorkflowEngine 集成测试
@@ -10,7 +10,7 @@ import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
  */
 
 describe("WorkflowEngine Integration Tests", () => {
-  let engine: WorkflowEngineV2;
+  let engine: WorkflowEngine;
   let container: AppContainer;
 
   beforeAll(async () => {

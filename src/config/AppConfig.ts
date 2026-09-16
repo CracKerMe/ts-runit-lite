@@ -169,7 +169,7 @@ const StorageConfigSchema = z.object({
   directory: z
     .string()
     .min(1)
-    .default(".ts-runit-data")
+    .default(".ts-workflow-engine-data")
     .describe("Local file storage directory"),
   fsyncOnWrite: z
     .boolean()
@@ -359,7 +359,7 @@ export const AppConfigSchema = z.object({
   resources: ResourceLimitsSchema,
   storage: StorageConfigSchema.default({
     type: "file",
-    directory: ".ts-runit-data",
+    directory: ".ts-workflow-engine-data",
     fsyncOnWrite: false,
   }),
   engine: WorkflowEngineConfigSchema,
@@ -455,7 +455,7 @@ function parseEnvToRawConfig(): Record<string, unknown> {
         (process.env.NODE_ENV === "test" ? "memory" : "file")) as
         | "memory"
         | "file",
-      directory: process.env.STORAGE_DIR || ".ts-runit-data",
+      directory: process.env.STORAGE_DIR || ".ts-workflow-engine-data",
       fsyncOnWrite: parseEnvBoolean(process.env.FSYNC_ON_WRITE, false),
     },
     engine: {

@@ -346,7 +346,7 @@ export function getConcurrencyControl(): ConcurrencyControl {
  * 销毁全局并发控制器并清空单例。
  *
  * 该单例此前从不销毁，其 10 秒清理定时器会一直把进程钉住——
- * WorkflowEngineV2.destroy() 也没有触及它。
+ * WorkflowEngine.destroy() 也没有触及它。
  */
 export function destroyConcurrencyControl(): void {
   concurrencyControlInstance?.destroy();

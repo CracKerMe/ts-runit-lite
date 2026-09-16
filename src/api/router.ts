@@ -28,7 +28,7 @@
  */
 import express, { type Router as ExpressRouter } from "express";
 import { getDLQ } from "../dlq/index";
-import type { WorkflowEngineV2 } from "../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../engine/WorkflowEngine";
 import { getMetrics } from "../metrics/index";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { Logger } from "../utils/Logger";
@@ -70,7 +70,7 @@ export interface WorkflowRouterBundle {
  * parser and any auth/rate-limit middleware.
  */
 export function createWorkflowRouter(
-  engine: WorkflowEngineV2,
+  engine: WorkflowEngine,
   storage: StorageProvider | null = null,
   options: WorkflowRouterOptions = {},
 ): ExpressRouter {
@@ -84,7 +84,7 @@ export function createWorkflowRouter(
  * against those same instances (see `startApiServer` in `./server.ts`).
  */
 export function createWorkflowRouterBundle(
-  engine: WorkflowEngineV2,
+  engine: WorkflowEngine,
   storage: StorageProvider | null = null,
   options: WorkflowRouterOptions = {},
 ): WorkflowRouterBundle {

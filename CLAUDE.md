@@ -30,7 +30,7 @@
 
 ```typescript
 // ✅ 推荐
-class WorkflowEngineV2 {
+class WorkflowEngine {
   async executeNode(instanceId: string, nodeId: string): Promise<NodeOutput> {
     Logger.info(instanceId, nodeId, "Executing node", { nodeId });
     // 实现逻辑
@@ -47,7 +47,7 @@ class badEngine {
 
 **命名规范**:
 
-- 类名: `PascalCase` — `WorkflowEngineV2`, `TaskExecutor`
+- 类名: `PascalCase` — `WorkflowEngine`, `TaskExecutor`
 - 函数/变量: `camelCase` — `executeNode`, `workflowId`
 - 常量: `UPPER_SNAKE_CASE` — `MAX_RETRIES`, `DEFAULT_TIMEOUT`
 - 接口/类型: `PascalCase` — `WorkflowDefinition`, `NodeExecutor`
@@ -97,7 +97,7 @@ test(engine): add retry mechanism tests
 ```
 src/
 ├── engine/             # 工作流执行引擎（核心）
-│   ├── WorkflowEngineV2.ts      # 主引擎类
+│   ├── WorkflowEngine.ts       # 主引擎类
 │   ├── TaskExecutor.ts          # 节点执行分发（nodeDispatch/ 子模块）
 │   ├── StateMachine.ts          # 状态机
 │   ├── ExpressionEvaluator.ts   # 表达式引擎
@@ -118,7 +118,13 @@ src/
 │   ├── HookManager.ts           # Hook 管理（生命周期）
 │   ├── EventCoordinator.ts      # 事件协调
 │   └── EventDeduplicator.ts     # 事件去重（内存）
-├── storage/            # 存储层（LocalFileStorage、MemoryStorage、归档管理）
+├── storage/            # 存储层（可插拔架构）
+│   ├── StorageProvider.ts        # 核心接口 StorageCore + 7 个能力子接口
+│   ├── registry.ts               # 适配器注册表（registerStorageAdapter）
+│   ├── builtin-adapters.ts       # 内置适配器注册（memory / local-file）
+│   ├── MemoryStorage.ts          # 内存存储（测试用）
+│   ├── LocalFileStorage.ts       # 本地文件持久化
+│   └── ArchiveManager.ts         # 终态实例归档
 ├── scheduler/          # 定时调度（Cron，单进程）
 ├── metrics/            # 指标聚合
 ├── utils/              # 工具类（Logger、审计、LeaseStore 等）
@@ -133,7 +139,7 @@ src/
 | ----------------------------------- | -------------- | ---------------------- |
 | `src/model/Workflow.ts`             | 工作流定义类型 | 低（扩展新节点类型时） |
 | `src/engine/TaskExecutor.ts`        | 节点执行分发   | 低（新增节点执行器时） |
-| `src/engine/WorkflowEngineV2.ts`    | 核心执行逻辑   | 低（核心算法改进时）   |
+| `src/engine/WorkflowEngine.ts`      | 核心执行逻辑   | 低（核心算法改进时）   |
 | `src/api/routes/`                   | API 端点实现   | 中（新增 API 端点时）  |
 | `src/engine/ExpressionEvaluator.ts` | 表达式解析     | 低（扩展表达式函数时） |
 | `.env.example`                      | 环境变量配置   | 中（新增配置项时）     |
@@ -177,8 +183,8 @@ pnpm test:data-processing # 运行数据处理示例
 import { describe, it, expect, beforeEach } from "vitest";
 import { bootstrap } from "../bootstrap";
 
-describe("WorkflowEngineV2", () => {
-  let engine: WorkflowEngineV2;
+describe("WorkflowEngine", () => {
+  let engine: WorkflowEngine;
 
   beforeEach(async () => {
     const ctx = await bootstrap({
@@ -289,7 +295,7 @@ export interface WorkflowDefinition {
 
 ### 6. 本地文件持久化与恢复
 
-- 非测试环境默认使用 `LocalFileStorage`，数据目录为 `.ts-runit-data/`
+- 非测试环境默认使用 `LocalFileStorage`，数据目录为 `.ts-workflow-engine-data/`
 - 每条记录独立保存为 JSON，通过临时文件和原子 rename 更新
 - 数据按 `instances`、`workflows`、`workflow-versions`、`waiting`、`metrics`、`events`、`heartbeats`、`dlq` 等目录分类
 - 启动时无法解析的记录会移动到对应分类的 `corrupt/`，不阻断其他数据恢复
@@ -353,7 +359,7 @@ export interface WorkflowDefinition {
 LOG_LEVEL=debug
 START_API_SERVER=true
 STORAGE_TYPE=file
-STORAGE_DIR=.ts-runit-data
+STORAGE_DIR=.ts-workflow-engine-data
 ```
 
 ### 生产环境
@@ -363,7 +369,7 @@ LOG_LEVEL=warn
 AUTH_ENABLED=true
 JWT_SECRET=strong-secret-key-at-least-32-chars
 STORAGE_TYPE=file
-STORAGE_DIR=/var/lib/ts-runit-lite
+STORAGE_DIR=/var/lib/ts-workflow-engine-lite
 ```
 
 完整配置项及恢复、归档注意事项见 `.env.example`。生产环境应在引擎停止后分别备份 `STORAGE_DIR` 和 `ARCHIVE_DIR`。

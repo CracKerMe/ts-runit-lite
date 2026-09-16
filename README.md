@@ -179,18 +179,18 @@ or change it later with `Logger.setLevel()`.
 | `memory` | Tests and intentionally ephemeral use | No               |
 
 Local file persistence is enabled by default outside tests. Runtime state is
-stored below `.ts-runit-data/` using one JSON file per record and atomic temp
+stored below `.ts-workflow-engine-data/` using one JSON file per record and atomic temp
 file replacement:
 
 ```bash
 STORAGE_TYPE=file
-STORAGE_DIR=.ts-runit-data
+STORAGE_DIR=.ts-workflow-engine-data
 ```
 
 The storage directory is organized by record type:
 
 ```text
-.ts-runit-data/
+.ts-workflow-engine-data/
 ├── instances/
 ├── workflows/
 ├── workflow-metadata/
@@ -307,6 +307,45 @@ pnpm typecheck      # type-check source, tests, and examples
 pnpm lint           # run oxlint checks
 pnpm format:check   # verify formatting
 ```
+
+## Optional API layer
+
+The REST API is optional. Core engine imports never pull in `express`, `cors`,
+`helmet`, or any HTTP framework. If you only need the workflow engine, skip
+those dependencies entirely:
+
+```bash
+# Core only (no REST API)
+pnpm add ts-workflow-engine-lite
+```
+
+If you need the REST API, install the peer dependencies:
+
+```bash
+# Full install with REST API
+pnpm add ts-workflow-engine-lite express cors helmet morgan ws swagger-ui-dist
+```
+
+API-related exports (`startApiServer`, `createWorkflowRouter`) use dynamic
+`import()` internally and will throw a clear error if the HTTP packages
+are not installed.
+
+## Examples
+
+| Example                                                         | Script                          | Description                                      |
+| --------------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
+| [quickstart.ts](./examples/quickstart.ts)                       | `pnpm example:quickstart`       | Minimal workflow with condition routing          |
+| [order-processing.ts](./examples/order-processing.ts)           | `pnpm example:order`            | Multi-step order processing pipeline             |
+| [embedded-express-app.ts](./examples/embedded-express-app.ts)   | `pnpm example:embedded-express` | Embed API in a host Express app                  |
+| [error-handling.ts](./examples/error-handling.ts)               | `pnpm example:error-handling`   | Named error classes and retry handling           |
+| [multi-tenant-workflow.ts](./examples/multi-tenant-workflow.ts) | `pnpm example:multi-tenant`     | Tenant-isolated workflows with condition routing |
+| [approval-pipeline.ts](./examples/approval-pipeline.ts)         | `pnpm example:approval`         | Long-running approval with timeout               |
+| [http-orchestration.ts](./examples/http-orchestration.ts)       | `pnpm example:http`             | HTTP integration with conditional routing        |
+| [parallel-fan-out.ts](./examples/parallel-fan-out.ts)           | `pnpm example:parallel`         | Parallel processing with merge                   |
+| [graceful-degradation.ts](./examples/graceful-degradation.ts)   | `pnpm example:degradation`      | Fallback paths and dead letter queues            |
+| [headless-engine.ts](./examples/headless-engine.ts)             | `pnpm example:headless`         | Pure programmatic usage, no API server           |
+| [worker-pool.ts](./examples/worker-pool.ts)                     | `pnpm example:worker-pool`      | CPU-intensive tasks with worker threads          |
+| [cron-data-sync.ts](./examples/cron-data-sync.ts)               | `pnpm example:cron-sync`        | Scheduled data synchronization                   |
 
 ## License
 

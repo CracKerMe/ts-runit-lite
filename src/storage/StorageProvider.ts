@@ -3,12 +3,9 @@ import type { WorkflowInstance } from "../model/Instance";
 import type { WorkflowDefinition } from "../model/Workflow";
 
 /**
- * Generic client handle returned by storage providers that expose a
- * lower-level client (e.g. for pub/sub or raw persistence access).
- * This fork only ships MemoryStorage, which never returns a client, so this
- * type is effectively unused at runtime — it exists purely so the
+ * @deprecated This type is unused at runtime. It exists purely so the
  * StorageProvider interface stays shape-compatible with custom storage
- * backends someone might plug in later.
+ * backends.
  */
 export type StorageClient = any;
 
@@ -162,21 +159,31 @@ export interface InstanceQueryParams {
   sortOrder?: InstanceSortOrder;
 }
 
-export interface StorageProvider {
+/**
+ * Core storage interface — the minimum required to run the workflow engine.
+ * Custom storage backends only need to implement this interface.
+ */
+export interface StorageCore {
   connect(): Promise<void>;
-  getClient?(): StorageClient;
+  close(): Promise<void>;
+
+  // Instance CRUD
   saveInstance(instance: WorkflowInstance): Promise<void>;
   casUpdateInstance(instance: WorkflowInstance): Promise<boolean>;
   loadInstance(instanceId: string): Promise<WorkflowInstance | null>;
+  deleteInstance(instanceId: string): Promise<void>;
+  listInstances(): Promise<string[]>;
+  queryInstances(
+    params: InstanceQueryParams,
+  ): Promise<{ instances: WorkflowInstance[]; total: number }>;
+
+  // Workflow definition CRUD
   saveWorkflow(workflow: WorkflowDefinition): Promise<void>;
   loadWorkflow(workflowId: string): Promise<WorkflowDefinition | null>;
-  listInstances(): Promise<string[]>;
-  listWorkflows(): Promise<string[]>;
-  deleteInstance(instanceId: string): Promise<void>;
   deleteWorkflow(workflowId: string): Promise<void>;
-  close(): Promise<void>;
+  listWorkflows(): Promise<string[]>;
 
-  // Event waiting state methods
+  // Event waiting state
   saveEventWaitingState(state: EventWaitingState): Promise<void>;
   loadEventWaitingState(
     instanceId: string,
@@ -184,6 +191,91 @@ export interface StorageProvider {
   ): Promise<EventWaitingState | null>;
   loadAllEventWaitingStates(): Promise<EventWaitingState[]>;
   deleteEventWaitingState(instanceId: string, nodeId: string): Promise<void>;
+}
+
+/** Optional: node/instance execution metrics. */
+export interface MetricsStorage {
+  saveInstanceMetrics(metrics: InstanceMetrics): Promise<void>;
+  loadInstanceMetrics(instanceId: string): Promise<InstanceMetrics | null>;
+  updateNodeMetrics(
+    instanceId: string,
+    nodeId: string,
+    metrics: NodeMetrics,
+  ): Promise<void>;
+}
+
+/** Optional: event history persistence and querying. */
+export interface EventHistoryStorage {
+  saveEvent(event: EventRecord): Promise<void>;
+  loadEvent(eventId: string): Promise<EventRecord | null>;
+  queryEvents(
+    params: EventQueryParams,
+  ): Promise<{ events: EventRecord[]; total: number }>;
+  deleteEvent(eventId: string): Promise<void>;
+}
+
+/** Optional: workflow versioning and metadata. */
+export interface WorkflowMetadataStorage {
+  saveWorkflowWithMetadata(workflow: StoredWorkflow): Promise<void>;
+  loadWorkflowWithMetadata(workflowId: string): Promise<StoredWorkflow | null>;
+  listWorkflowsWithMetadata(): Promise<StoredWorkflow[]>;
+  saveWorkflowVersion(version: StoredWorkflowVersion): Promise<void>;
+  loadWorkflowVersion(
+    workflowId: string,
+    version: number,
+  ): Promise<StoredWorkflowVersion | null>;
+  listWorkflowVersions(workflowId: string): Promise<number[]>;
+}
+
+/** Optional: heartbeat persistence for long-running tasks. */
+export interface HeartbeatStorage {
+  saveHeartbeat?(state: HeartbeatState): Promise<void>;
+  loadAllHeartbeats?(): Promise<HeartbeatState[]>;
+  deleteHeartbeat?(instanceId: string, nodeId: string): Promise<void>;
+}
+
+/** Optional: cleanup of stale/expired data. */
+export interface CleanupStorage {
+  cleanupStaleEvents?(retentionDays: number): Promise<number>;
+  cleanupExpiredHeartbeats?(): Promise<number>;
+  /** Remove terminal instances older than the supplied age. */
+  cleanupStaleInstances?(maxAgeMs: number): number | Promise<number>;
+}
+
+/** Optional: dead-letter queue persistence. */
+export interface DlqStorage {
+  saveDeadLetterEntry?(entry: unknown): Promise<void>;
+  loadAllDeadLetterEntries?(): Promise<unknown[]>;
+  deleteDeadLetterEntry?(id: string): Promise<void>;
+}
+
+/** Optional: webhook registration and delivery persistence. */
+export interface WebhookStorage {
+  saveWebhookEntry?(entry: unknown): Promise<void>;
+  loadAllWebhookEntries?(): Promise<unknown[]>;
+  deleteWebhookEntry?(id: string): Promise<void>;
+  saveWebhookDeliveryEntry?(entry: unknown): Promise<void>;
+  loadAllWebhookDeliveryEntries?(): Promise<unknown[]>;
+  deleteWebhookDeliveryEntry?(id: string): Promise<void>;
+}
+
+/**
+ * Full storage provider — includes all optional capabilities.
+ * This is the type used internally by the engine.
+ * Custom backends only need to implement StorageCore.
+ */
+export type FullStorageProvider =
+  | StorageCore
+  | MetricsStorage
+  | EventHistoryStorage
+  | WorkflowMetadataStorage
+  | HeartbeatStorage
+  | CleanupStorage
+  | DlqStorage
+  | WebhookStorage;
+
+export interface StorageProvider extends StorageCore {
+  getClient?(): StorageClient;
 
   // Enhanced workflow methods with metadata
   saveWorkflowWithMetadata(workflow: StoredWorkflow): Promise<void>;
@@ -213,11 +305,6 @@ export interface StorageProvider {
   ): Promise<{ events: EventRecord[]; total: number }>;
   deleteEvent(eventId: string): Promise<void>;
 
-  // Instance query methods with filtering
-  queryInstances(
-    params: InstanceQueryParams,
-  ): Promise<{ instances: WorkflowInstance[]; total: number }>;
-
   // Heartbeat persistence methods
   saveHeartbeat?(state: HeartbeatState): Promise<void>;
   loadAllHeartbeats?(): Promise<HeartbeatState[]>;
@@ -226,8 +313,6 @@ export interface StorageProvider {
   // Event cleanup methods
   cleanupStaleEvents?(retentionDays: number): Promise<number>;
   cleanupExpiredHeartbeats?(): Promise<number>;
-
-  /** Remove terminal instances older than the supplied age. */
   cleanupStaleInstances?(maxAgeMs: number): number | Promise<number>;
 
   // Dead-letter persistence (optional for custom providers)

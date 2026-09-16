@@ -86,7 +86,7 @@ export { templateRegistry };
  * of being hand-maintained (see GET /workflows/schema).
  */
 export const workflowSchema = {
-  $id: "https://ts-runit.local/workflow.schema.json",
+  $id: "https://ts-workflow-engine.local/workflow.schema.json",
   ...getWorkflowDefinitionJsonSchema(),
 };
 
@@ -287,7 +287,7 @@ export const sanitizeValue = (value: any): any => {
     return items;
   }
   if (typeof value === "object") {
-    const result: Record<string, any> = {};
+    const result: Record<string, unknown> = {};
     Object.entries(value).forEach(([key, item]) => {
       if (typeof item === "function") return;
       const sanitized = sanitizeValue(item);

@@ -369,7 +369,7 @@ export class EventCoordinator {
    *
    * @param shouldSkip - Returns true for (instanceId, nodeId) pairs that will
    * be re-subscribed with live onEvent/onTimeout handlers by the normal
-   * instance-resume path (WorkflowEngineV2.resumeRunningInstances re-entering
+   * instance-resume path (WorkflowEngine.resumeRunningInstances re-entering
    * executeNode). Those must be skipped here: subscribeToEvent() is a no-op
    * once a tracker already exists for the key, so restoring them first would
    * permanently strand the resumed instance behind a dead-end subscription

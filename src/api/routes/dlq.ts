@@ -1,6 +1,6 @@
 import { type Request, type Response, Router } from "express";
 import type { DeadLetterQueue, DeadLetterStatus } from "../../dlq/index";
-import type { WorkflowEngineV2 } from "../../engine/WorkflowEngineV2";
+import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 import { parseEnvInt } from "../../utils/env";
 import { Logger } from "../../utils/Logger";
 import { sendError, sendSuccess } from "../response";
@@ -43,7 +43,7 @@ interface RetryOutcome {
   statusCode: number;
 }
 
-type DlqRetryEngine = Pick<WorkflowEngineV2, "start">;
+type DlqRetryEngine = Pick<WorkflowEngine, "start">;
 
 function requireDlq(req: Request): DeadLetterQueue {
   if (!req.dlq) {

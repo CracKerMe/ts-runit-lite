@@ -35,7 +35,7 @@ describe("ConcurrencyControl – timer lifecycle", () => {
   });
 
   it("destroys and resets the global singleton", () => {
-    // 回归守卫：该单例此前从不销毁，WorkflowEngineV2.destroy() 也没碰它。
+    // 回归守卫：该单例此前从不销毁，WorkflowEngine.destroy() 也没碰它。
     const first = getConcurrencyControl();
     destroyConcurrencyControl();
     const second = getConcurrencyControl();

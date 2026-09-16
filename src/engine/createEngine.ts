@@ -1,6 +1,6 @@
 import { getContainer } from "../container";
 import { Logger } from "../utils/Logger";
-import { WorkflowEngineV2 } from "./WorkflowEngineV2";
+import { WorkflowEngine } from "./WorkflowEngine";
 
 /**
  * 引擎创建选项
@@ -17,15 +17,15 @@ export interface CreateEngineOptions {
  */
 export async function createEngine(
   options: CreateEngineOptions = {},
-): Promise<WorkflowEngineV2> {
+): Promise<WorkflowEngine> {
   const container = getContainer();
   if (!container) {
     throw new Error("Container not initialized. Call createContainer() first.");
   }
 
-  Logger.info("system", "engine", "Creating WorkflowEngineV2");
+  Logger.info("system", "engine", "Creating WorkflowEngine");
 
-  const engine = new WorkflowEngineV2(
+  const engine = new WorkflowEngine(
     container.storage,
     container.eventBus,
     container.scheduler,
@@ -48,6 +48,6 @@ export async function createEngine(
  */
 export async function createEngineV2(
   options: CreateEngineOptions = {},
-): Promise<WorkflowEngineV2> {
+): Promise<WorkflowEngine> {
   return createEngine(options);
 }

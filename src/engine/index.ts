@@ -53,8 +53,8 @@ export {
 } from "./StickyExecutionManager";
 export {
   type WaitForCompletionOptions,
-  WorkflowEngineV2,
-} from "./WorkflowEngineV2";
+  WorkflowEngine,
+} from "./WorkflowEngine";
 export { WorkflowRegistry } from "./WorkflowRegistry";
 export {
   getVersionManager,
