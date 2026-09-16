@@ -75,6 +75,14 @@ type Collection =
   | "webhook-deliveries";
 
 /**
+ * 全量孤儿清扫的最小间隔。
+ *
+ * 正常路径已经精确删除，这只是兜底崩溃留下的孤儿文件，不需要每次清理都
+ * readdir 一遍整个目录。
+ */
+const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
  * `FSYNC_ON_WRITE=true` 默认作用于哪些集合。
  *
  * 取舍很简单：**系统记录与用户可见的审计历史要 fsync，纯派生的可观测性
@@ -152,6 +160,10 @@ export class LocalFileStorage extends MemoryStorage {
    * 磁盘。落盘成功即清空。详见 {@link persistOrRollback}。
    */
   private rollbackTargets = new Map<string, () => Promise<void>>();
+  /** 每个集合上次做全量孤儿清扫的时间，见 {@link sweepOrphans}。 */
+  private lastOrphanSweep = new Map<Collection, number>();
+  /** cleanupStaleInstances 触发的异步文件清理，见 {@link whenIdle}。 */
+  private pendingFileCleanup: Promise<void> = Promise.resolve();
   private deadLetterEntries = new Map<string, unknown>();
   private webhookEntries = new Map<string, unknown>();
   private webhookDeliveryEntries = new Map<string, unknown>();
@@ -459,9 +471,9 @@ export class LocalFileStorage extends MemoryStorage {
   }
 
   override async saveHeartbeat(state: HeartbeatState): Promise<void> {
-    const previous = (await super.loadAllHeartbeats()).find(
-      (hb) => hb.heartbeatKey === state.heartbeatKey,
-    );
+    // Map 直接按 key 取，不再 loadAllHeartbeats()——那会把系统里**每一条**
+    // heartbeat 都深拷贝一遍，只为找出其中一条的前值。
+    const previous = this.peekHeartbeat(state.heartbeatKey);
     await super.saveHeartbeat(state);
     await this.persistOrRollback(
       "heartbeats",
@@ -484,37 +496,60 @@ export class LocalFileStorage extends MemoryStorage {
 
   override async cleanupStaleEvents(retentionDays: number): Promise<number> {
     const deleted = await super.cleanupStaleEvents(retentionDays);
-    const retained = await super.queryEvents({
-      page: 1,
-      pageSize: 100_000_000,
-    });
-    const retainedIds = new Set(retained.events.map((event) => event.id));
-    for (const id of await this.listFiles("events")) {
-      if (!retainedIds.has(id)) await this.removeFile("events", id);
-    }
+    // 精确删除刚被清理掉的那些记录的文件。
+    //
+    // 此前这里要 queryEvents({pageSize: 1亿}) 物化并深拷贝整个事件库、
+    // 排序、再和 readdir 的结果求差集——一次清理的代价与**存量**成正比，
+    // 而不是与删除量成正比。孤儿文件交给下面的低频清扫兜底。
+    await this.removeFilesConcurrently("events", this.lastCleanedEventIds);
+    await this.sweepOrphans("events", (id) => this.hasEventInMemory(id));
     return deleted;
   }
 
   override async cleanupExpiredHeartbeats(): Promise<number> {
     const deleted = await super.cleanupExpiredHeartbeats();
-    const retained = new Set(
-      (await super.loadAllHeartbeats()).map(
-        (heartbeat) => `${heartbeat.instanceId}:${heartbeat.nodeId}`,
-      ),
+    await this.removeFilesConcurrently(
+      "heartbeats",
+      this.lastCleanedHeartbeatKeys,
     );
-    for (const id of await this.listFiles("heartbeats")) {
-      if (!retained.has(id)) await this.removeFile("heartbeats", id);
-    }
+    await this.sweepOrphans("heartbeats", (id) =>
+      this.hasHeartbeatFileKeyInMemory(id),
+    );
     return deleted;
   }
 
   override cleanupStaleInstances(maxAgeMs: number): number {
     const cleaned = super.cleanupStaleInstances(maxAgeMs);
-    void this.removeStaleInstanceFiles(maxAgeMs);
+    // 接口是同步的（返回 number），这里只能异步收尾。但不能让这个 promise
+    // 彻底脱管：close() 需要等它结束，否则关闭过程可能和删文件抢跑；测试
+    // 也需要一个可等待的句柄，而不是靠 sleep 猜时间。
+    this.pendingFileCleanup = this.removeStaleInstanceFiles(maxAgeMs).catch(
+      (error: unknown) => {
+        Logger.error(
+          "system",
+          "cleanup",
+          "Failed to remove stale instance files",
+          error instanceof Error ? error.stack : String(error),
+        );
+      },
+    );
     return cleaned;
   }
 
+  /**
+   * 等待 {@link cleanupStaleInstances} 触发的异步文件清理结束。
+   *
+   * 供 close() 与测试使用——清理本身是同步接口的异步收尾，没有这个句柄
+   * 就只能靠 sleep 去猜它什么时候跑完。
+   */
+  async whenIdle(): Promise<void> {
+    await this.pendingFileCleanup;
+    await Promise.all(this.writeQueues.values());
+  }
+
   override async close(): Promise<void> {
+    // 先等异步文件清理收尾，避免关闭过程与它抢跑
+    await this.pendingFileCleanup;
     await Promise.all(this.writeQueues.values());
     this.connected = false;
     await super.close();
@@ -568,19 +603,53 @@ export class LocalFileStorage extends MemoryStorage {
     await this.removeFile("webhook-deliveries", id);
   }
 
-  private async removeStaleInstanceFiles(maxAgeMs: number): Promise<void> {
-    const threshold = Date.now() - maxAgeMs;
-    const files = await this.listFiles("instances");
-    for (const id of files) {
-      const instance = await super.loadInstance(id);
-      if (!instance) await this.removeFile("instances", id);
-      else if (
-        (instance.updatedAt?.getTime?.() ?? 0) < threshold &&
-        ["completed", "failed"].includes(instance.status)
-      ) {
-        await this.removeFile("instances", id);
-      }
-    }
+  private async removeStaleInstanceFiles(_maxAgeMs: number): Promise<void> {
+    // 内存侧刚删掉的实例，文件精确删除即可——不需要再 readdir 整个目录
+    // 并逐个 loadInstance（那会把每个实例都深拷贝一遍）。
+    await this.removeFilesConcurrently(
+      "instances",
+      this.lastCleanedInstanceIds,
+    );
+    await this.sweepOrphans("instances", (id) => this.peekInstance(id) != null);
+  }
+
+  /** 并发删除一批文件，替代此前逐个 await 的串行 unlink。 */
+  private async removeFilesConcurrently(
+    collection: Collection,
+    ids: readonly string[],
+  ): Promise<void> {
+    if (ids.length === 0) return;
+    await mapWithConcurrency([...ids], async (id) => {
+      await this.removeFile(collection, id);
+    });
+  }
+
+  /**
+   * 低频孤儿清扫：删掉磁盘上有、内存里已经没有的文件。
+   *
+   * 精确删除覆盖了正常路径，但崩溃可能在"内存已删、文件未删"之间留下孤儿。
+   * 这里按 {@link ORPHAN_SWEEP_INTERVAL_MS} 的节奏兜底，而不是每次清理都
+   * 全量 readdir 一遍。
+   */
+  private async sweepOrphans(
+    collection: Collection,
+    isLive: (id: string) => boolean,
+  ): Promise<void> {
+    const now = Date.now();
+    const last = this.lastOrphanSweep.get(collection) ?? 0;
+    if (now - last < ORPHAN_SWEEP_INTERVAL_MS) return;
+    this.lastOrphanSweep.set(collection, now);
+
+    const orphans = (await this.listFiles(collection)).filter(
+      (id) => !isLive(id),
+    );
+    if (orphans.length === 0) return;
+    await this.removeFilesConcurrently(collection, orphans);
+    Logger.debug(
+      "system",
+      "cleanup",
+      `Swept ${orphans.length} orphaned ${collection} file(s)`,
+    );
   }
 
   /**

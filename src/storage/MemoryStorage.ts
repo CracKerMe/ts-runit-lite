@@ -32,6 +32,16 @@ export class MemoryStorage implements StorageProvider {
   private instanceMetrics = new Map<string, InstanceMetrics>();
   private events = new Map<string, EventRecord>();
   private heartbeats = new Map<string, HeartbeatState>();
+  /**
+   * 最近一次 cleanup 删掉的 id，供子类精确删除对应文件。
+   *
+   * 没有它时，LocalFileStorage 只能反过来"物化全部存活记录 + readdir 整个
+   * 目录，再求差集"来推断该删哪些文件——一次清理就要 deepClone 整个事件库
+   * 并排序。记录被删的 id 把这一步降到与删除量成正比。
+   */
+  protected lastCleanedEventIds: string[] = [];
+  protected lastCleanedHeartbeatKeys: string[] = [];
+  protected lastCleanedInstanceIds: string[] = [];
 
   async connect(): Promise<void> {
     Logger.info("system", "storage", "Memory storage initialized");
@@ -94,6 +104,22 @@ export class MemoryStorage implements StorageProvider {
   /** 见 {@link peekInstance}；heartbeats 同样是整体替换。 */
   protected peekHeartbeat(heartbeatKey: string): HeartbeatState | undefined {
     return this.heartbeats.get(heartbeatKey);
+  }
+
+  /** 事件是否还在内存里。孤儿清扫用，不需要取值因此不 clone。 */
+  protected hasEventInMemory(eventId: string): boolean {
+    return this.events.has(eventId);
+  }
+
+  /**
+   * 磁盘上的 heartbeat 文件名是 `<instanceId>:<nodeId>`，而内存 Map 以
+   * `heartbeatKey` 为键，两者不一定相同，所以这里按文件名形态反查。
+   */
+  protected hasHeartbeatFileKeyInMemory(fileKey: string): boolean {
+    for (const hb of this.heartbeats.values()) {
+      if (`${hb.instanceId}:${hb.nodeId}` === fileKey) return true;
+    }
+    return false;
   }
 
   async saveInstance(instance: WorkflowInstance): Promise<void> {
@@ -637,20 +663,38 @@ export class MemoryStorage implements StorageProvider {
   ): void {
     const direction = sortOrder === "asc" ? 1 : -1;
 
-    instances.sort((a, b) => {
-      let cmp: number;
-      if (sortBy === "status") {
-        cmp = a.status.localeCompare(b.status);
-      } else if (sortBy === "updatedAt") {
-        cmp = this.toEpochMs(a.updatedAt) - this.toEpochMs(b.updatedAt);
-      } else {
-        cmp = this.toEpochMs(a.createdAt) - this.toEpochMs(b.createdAt);
-      }
+    // Decorate-sort-undecorate：排序键只算一次。
+    //
+    // 此前 toEpochMs 写在比较器内部，日期强制转换因此跑了 O(N log N) 次
+    // ——5000 条实例排一次序要做约 12 万次 Date 解析，而其中只有 5000 次
+    // 是必要的。
+    const decorated = instances.map((instance) => ({
+      instance,
+      key:
+        sortBy === "status"
+          ? instance.status
+          : sortBy === "updatedAt"
+            ? this.toEpochMs(instance.updatedAt)
+            : this.toEpochMs(instance.createdAt),
+    }));
+
+    decorated.sort((a, b) => {
+      const cmp =
+        typeof a.key === "string"
+          ? a.key.localeCompare(b.key as string)
+          : a.key - (b.key as number);
 
       if (cmp !== 0) return cmp * direction;
       // Stable tie-breaker so equal keys keep a deterministic page order.
-      return a.instanceId.localeCompare(b.instanceId) * direction;
+      return (
+        a.instance.instanceId.localeCompare(b.instance.instanceId) * direction
+      );
     });
+
+    // 原地写回，保持 sortInstances 的既有签名（调用方依赖它就地排序）
+    for (const [index, entry] of decorated.entries()) {
+      instances[index] = entry.instance;
+    }
   }
 
   /**
@@ -668,6 +712,8 @@ export class MemoryStorage implements StorageProvider {
     const threshold = Date.now() - maxAgeMs;
     let cleaned = 0;
 
+    // 见 lastCleanedEventIds：记录被删的 id 供子类精确删文件。
+    this.lastCleanedInstanceIds = [];
     for (const [id, instance] of this.instances) {
       const isCompleted =
         instance.status === "completed" || instance.status === "failed";
@@ -675,6 +721,7 @@ export class MemoryStorage implements StorageProvider {
 
       if (isCompleted && isStale) {
         this.instances.delete(id);
+        this.lastCleanedInstanceIds.push(id);
         cleaned++;
         Logger.debug("system", "cleanup", `Cleaned up stale instance ${id}`);
       }
@@ -722,9 +769,13 @@ export class MemoryStorage implements StorageProvider {
     const cutoffTime = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
     let deleted = 0;
 
+    // 记录被删的 id 供子类精确删除对应文件。此前 LocalFileStorage 需要
+    // 反过来物化整个事件库来推断"谁还活着"，代价是全量 clone + 排序。
+    this.lastCleanedEventIds = [];
     for (const [id, event] of this.events) {
       if (event.timestamp < cutoffTime) {
         this.events.delete(id);
+        this.lastCleanedEventIds.push(id);
         deleted++;
       }
     }
@@ -743,9 +794,12 @@ export class MemoryStorage implements StorageProvider {
   async cleanupExpiredHeartbeats(): Promise<number> {
     let cleaned = 0;
 
+    // 见 cleanupStaleEvents：记录被删的 key 供子类精确删文件。
+    this.lastCleanedHeartbeatKeys = [];
     for (const [key, hb] of this.heartbeats) {
       if (hb.deadline < Date.now()) {
         this.heartbeats.delete(key);
+        this.lastCleanedHeartbeatKeys.push(`${hb.instanceId}:${hb.nodeId}`);
         cleaned++;
       }
     }
