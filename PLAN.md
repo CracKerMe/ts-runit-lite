@@ -8,7 +8,31 @@
 
 ## 一、统一命名
 
-### 0. 项目名称统一
+### 0. 项目名称统一 ✅（2026-09-16 已完成，仅剩 git 仓库名/本地目录名待定）
+
+Logger Symbol、Schema ID、测试 tmpdir 前缀、代码注释中的包名均已统一为
+`ts-workflow-engine-lite`（tmpdir 前缀 `tswe-*`）。`WorkflowEngineV2` →
+`WorkflowEngine` 重命名见 `006aa34`。
+
+**2026-09-16 追加**：「完整版 ts-runit」并非真实存在或计划中的产品，已从
+`AppConfig.ts`、`CLAUDE.md`、`docs/BUSINESS_SCENARIOS.md` 中移除该表述，
+替换为具体的外部方案（Temporal、Cadence）或直接删除该分句。
+`.env.example` 中的 `@ts-runit/cli` 同样不是真实存在的工具——`RUNIT_SERVER`/
+`RUNIT_TOKEN` 在代码中未被任何地方读取，是从未落地的规划残留，已整段移除。
+
+**仍保留 `ts-runit-data` 引用的位置**（有意保留，非遗留问题）：
+
+- `src/storage/index.ts` 的 `LEGACY_DEFAULT_DIR = ".ts-runit-data"`：迁移兼容用途，
+  故意保留旧目录名以便检测和提示用户迁移
+
+**仍未改动**（已决定暂不处理，避免破坏现有协作者的 clone URL）：
+
+| 改动项     | 现状             | 说明                                                     |
+| ---------- | ---------------- | --------------------------------------------------------- |
+| git 仓库名 | `ts-runit-lite`  | 两个 remote（内网 git 服务器 + GitHub）均未重命名          |
+| 本地目录名 | `ts-runit-lite`  | 开发者本地操作，改了需要重新 clone/更新本地路径             |
+
+---
 
 当前项目同时使用了 **三个不同的名字**，在代码库中制造了大量混乱：
 

@@ -8,9 +8,9 @@ import { z } from "zod";
 // ── Legacy Redis Configuration ───────────────────────────────────────────────
 // ⚠️ 兼容性占位字段：ts-workflow-engine-lite 是单进程 lite 版本，不包含 Redis
 // 客户端依赖，也不会用这些值建立任何连接。设置这些字段（或对应的环境变量）
-// 不会让引擎接入 Redis 或分布式存储/限流后端——它们只是为了让从完整版
-// ts-runit 迁移过来的旧调用方在读取/序列化配置对象时不报错。
-// 需要 Redis 或集群能力时应使用完整版 ts-runit，或自行接入外部方案。
+// 不会让引擎接入 Redis 或分布式存储/限流后端——它们只是为了让旧调用方在
+// 读取/序列化配置对象时不报错。需要 Redis 或集群能力时应自行接入外部方案
+// （如 Temporal、Cadence）。
 
 const RedisConfigSchema = z.object({
   enabled: z
@@ -220,7 +220,7 @@ const AuthConfigSchema = z.object({
 // ⚠️ 兼容性占位字段：这些值只在此处被解析/校验，engine/event 模块不会读取
 // 或依据它们改变任何行为。把 leaderElection / eventBusDistributed 设为 true
 // 不会让引擎获得多进程领导者选举或分布式事件总线——lite 版本是单进程设计，
-// 需要这些能力时应使用完整版 ts-runit。
+// 需要这些能力时应自行接入外部方案（如 Temporal、Cadence）。
 
 const ClusterConfigSchema = z.object({
   leaderElection: z

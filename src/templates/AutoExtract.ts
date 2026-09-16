@@ -109,7 +109,7 @@ function extractTemplateFromFile(
     },
     parameters: [],
     examples: [],
-    author: "ts-runit",
+    author: "ts-workflow-engine-lite",
     version: "1.0.0",
     downloads: 0,
     rating: 0,

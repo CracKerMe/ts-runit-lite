@@ -46,7 +46,7 @@
   },
   "scripts": {
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
-    "build": "pnpm clean && tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
+    "build": "pnpm clean && tsc -p tsconfig.build.json && tsx scripts/fix-esm-imports.ts",
     "start": "pnpm build && node dist/src/cli.js",
     "dev": "tsx src/cli.ts",
     "dev:api": "cross-env START_API_SERVER=true tsx src/cli.ts",
