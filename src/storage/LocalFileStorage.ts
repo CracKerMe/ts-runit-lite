@@ -83,11 +83,30 @@ export class LocalFileStorage extends MemoryStorage {
   private readonly directoryFsyncQueues = new Map<string, Promise<void>>();
   private writeQueues = new Map<string, Promise<void>>();
   /**
+   * 每个 key 最新的待写入值。写队列此前只做串行化、不做合并——同一条记录
+   * 的 N 次快速更新会产生 N 次整文件重写，其中中间的 N-2 次在落盘前就已
+   * 被更新的值取代，纯属浪费 I/O。
+   */
+  private pendingValues = new Map<string, unknown>();
+  /**
+   * 已排队但尚未开始执行的写操作。后续 persist() 可以直接 await 它而不必
+   * 再排一个——它会取走 {@link pendingValues} 里的最新值。
+   */
+  private queuedWrites = new Map<string, Promise<void>>();
+  /**
    * Tracks the latest in-memory mutation for each durable record. A failed
    * older write must never compensate over a newer mutation which has already
    * reached memory (and possibly disk).
    */
   private persistenceGenerations = new Map<string, number>();
+  /**
+   * 每个 key 当前这批未落盘写入中**最早**的回滚点。
+   *
+   * 并发写同一条记录且共享的落盘失败时，必须回滚到这批写入开始之前的状态，
+   * 而不是最后一个调用方的快照——后者只会退回到倒数第二个值，让内存领先
+   * 磁盘。落盘成功即清空。详见 {@link persistOrRollback}。
+   */
+  private rollbackTargets = new Map<string, () => Promise<void>>();
   private deadLetterEntries = new Map<string, unknown>();
   private webhookEntries = new Map<string, unknown>();
   private webhookDeliveryEntries = new Map<string, unknown>();
@@ -664,11 +683,35 @@ export class LocalFileStorage extends MemoryStorage {
     if (!this.connected) return;
     if (value === null || value === undefined) return;
     const key = this.filePath(collection, id);
+
+    // 把本次的值登记为该 key 的最新待写入值。若已有一个写操作在排队，
+    // 它执行时会取走这里的最新值——中间那些已经过期的值就此被跳过，
+    // 不再各自触发一次整文件重写。
+    this.pendingValues.set(key, value);
+
+    // 已有排队中（尚未开始执行）的写操作时，直接复用它：它必然会写入
+    // 我们刚登记的值或更新的值，因此 await 它满足本次调用的持久化语义。
+    //
+    // 注意这**不是**持久性窗口：调用方依然要等到"包含自己的值或更严格
+    // 更新的值"被 rename 落盘后才返回。被跳过的中间值只是从未被写过，
+    // 这与"更新的那次写先发生"在崩溃语义上不可区分。
+    const queued = this.queuedWrites.get(key);
+    if (queued) {
+      await queued;
+      return;
+    }
+
     const operation = async () => {
+      // 进入执行阶段：本次写操作不再接受新的合并，后续调用要另起一个。
+      this.queuedWrites.delete(key);
+      const pending = this.pendingValues.get(key);
+      this.pendingValues.delete(key);
+      if (pending === undefined) return;
+
       const temp = `${key}.${process.pid}.${Date.now()}.tmp`;
       // 不做缩进：每次节点流转都会整体重写实例文件，2 空格缩进会把
       // I/O 放大 2-3 倍而没有任何运行时收益（需要可读性时用 jq）。
-      const contents = JSON.stringify(value);
+      const contents = JSON.stringify(pending);
 
       if (!this.fsyncOnWrite) {
         // 默认路径：不需要 fsync 时用 writeFile 一次性完成，不额外打开/
@@ -699,11 +742,18 @@ export class LocalFileStorage extends MemoryStorage {
     const previous = this.writeQueues.get(key) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(operation);
     this.writeQueues.set(key, current);
+    // 登记为"排队中"，让紧随其后的 persist() 能合并进来。operation 一旦
+    // 开始执行就会把自己从这里摘掉（见上），因此合并只发生在真正还没
+    // 落盘的窗口内。
+    this.queuedWrites.set(key, current);
     try {
       await current;
     } finally {
       if (this.writeQueues.get(key) === current) {
         this.writeQueues.delete(key);
+      }
+      if (this.queuedWrites.get(key) === current) {
+        this.queuedWrites.delete(key);
       }
     }
   }
@@ -729,19 +779,38 @@ export class LocalFileStorage extends MemoryStorage {
     const key = this.filePath(collection, id);
     const generation = (this.persistenceGenerations.get(key) ?? 0) + 1;
     this.persistenceGenerations.set(key, generation);
+
+    // 记住"本批失败中最早的那个回滚点"。
+    //
+    // 并发写同一条记录时，每个调用方都在 await 之前就领走了自己的代号，
+    // 因此 N 个并发写会拿到代号 1..N。若它们共享的那次落盘失败，只有代号
+    // N 与当前代号相等——但代号 1..N-1 的调用方**也**已经把各自的值提交
+    // 进内存了，回滚到代号 N 的快照只会退回到 N-1 写入的值，而磁盘上还是
+    // 这批写入之前的内容。内存就此领先磁盘，正是本方法要防的情况。
+    //
+    // 只保留最早的那个快照，失败时回滚到它，内存才能真正回到"这批写入从
+    // 未发生"的状态，与磁盘一致。成功落盘后清掉，下一批重新开始。
+    if (!this.rollbackTargets.has(key)) {
+      this.rollbackTargets.set(key, rollback);
+    }
+
     try {
       await this.persist(collection, id, value);
+      // 本次（或合并后更新的那次）已经落盘，之前排队的快照都不再需要。
+      this.rollbackTargets.delete(key);
     } catch (error) {
-      // A later mutation has superseded this write. Its state is the only
-      // valid live state to retain, so rolling back to this operation's old
-      // snapshot would reintroduce a memory/disk split.
-      if (this.persistenceGenerations.get(key) === generation) {
-        await rollback();
+      // 只有最新的调用方负责执行回滚：更早的调用方若也回滚一次，会把
+      // 已经正确的内存状态反复写回同一个值，纯属多余。
+      const isNewest = this.persistenceGenerations.get(key) === generation;
+      if (isNewest) {
+        const target = this.rollbackTargets.get(key) ?? rollback;
+        this.rollbackTargets.delete(key);
+        await target();
       }
       Logger.error(
         "system",
         "storage",
-        `Failed to persist ${collection}/${id} to disk${this.persistenceGenerations.get(key) === generation ? "; rolled back in-memory state" : "; a newer mutation remains in memory"}`,
+        `Failed to persist ${collection}/${id} to disk${isNewest ? "; rolled back in-memory state" : "; a newer mutation remains in memory"}`,
         error instanceof Error ? error.stack : String(error),
       );
       throw error;

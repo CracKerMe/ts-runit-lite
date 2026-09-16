@@ -316,6 +316,45 @@ describe("LocalFileStorage — write path throughput", () => {
     );
   });
 
+  /**
+   * 并发写同一条记录时的写合并效果。
+   *
+   * 热路径上编排器是逐个 await 的，很少有可合并的窗口；真正受益的是并发
+   * 场景——并行分支同时推进同一个实例、或 load-test 那样的批量启动。
+   */
+  it("write coalescing — concurrent writes to one key", async () => {
+    for (const burst of [10, 50, 200]) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tswe-bench-c-"));
+      const store = new LocalFileStorage(dir);
+      await store.connect();
+
+      const started = process.hrtime.bigint();
+      const { renames } = await countRenames(async () => {
+        await Promise.all(
+          Array.from({ length: burst }, (_, i) =>
+            store.saveInstance({
+              ...makeInstance(0),
+              instanceId: "hot",
+              context: { n: i },
+            } as WorkflowInstance),
+          ),
+        );
+      });
+      const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+      console.log(
+        `  burst=${String(burst).padStart(3)}  renames=${String(renames).padStart(3)}  ` +
+          `(${(burst / Math.max(renames, 1)).toFixed(1)}x fewer writes)  ${elapsedMs.toFixed(1)}ms`,
+      );
+
+      await store.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    storage = new LocalFileStorage(directory);
+    await storage.connect();
+  });
+
   it("fsyncOnWrite: true — same three paths", async () => {
     storage = new LocalFileStorage({ directory, fsyncOnWrite: true });
     await storage.connect();
