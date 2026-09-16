@@ -5,7 +5,7 @@
 ## 项目信息
 
 **项目名**: ts-workflow-engine-lite  
-**版本**: 2.2.0（2026 年 9 月）  
+**版本**: 3.0.0（2026 年 9 月）  
 **类型**: 轻量级 TypeScript 工作流引擎（ts-runit 的功能精简 fork）  
 **语言**: TypeScript + Express v5  
 **包管理**: pnpm
@@ -122,8 +122,8 @@ src/
 │   ├── StorageProvider.ts        # 核心接口 StorageCore + 7 个能力子接口
 │   ├── registry.ts               # 适配器注册表（registerStorageAdapter）
 │   ├── builtin-adapters.ts       # 内置适配器注册（memory / local-file）
-│   ├── MemoryStorage.ts          # 内存存储（测试用）
-│   ├── LocalFileStorage.ts       # 本地文件持久化
+│   ├── MemoryStorage.ts          # 内存存储 + 二级索引（查询层）
+│   ├── LocalFileStorage.ts       # 本地文件持久化（继承 MemoryStorage 作为查询层）
 │   └── ArchiveManager.ts         # 终态实例归档
 ├── scheduler/          # 定时调度（Cron，单进程）
 ├── metrics/            # 指标聚合
@@ -208,6 +208,7 @@ describe("WorkflowEngine", () => {
 - ✅ Heartbeat 持久化与恢复
 - ✅ 本地文件存储的重启恢复、损坏记录隔离与归档清理
 - ✅ 资源限制与容量（自动清理）
+- ✅ 存储层：二级索引一致性（随机序列对照暴力扫描 + 断言索引规模）、写合并与失败回滚、并行恢复、metrics 布局兼容
 
 ### 运行测试
 
@@ -298,6 +299,9 @@ export interface WorkflowDefinition {
 - 非测试环境默认使用 `LocalFileStorage`，数据目录为 `.ts-workflow-engine-data/`
 - 每条记录独立保存为 JSON，通过临时文件和原子 rename 更新
 - 数据按 `instances`、`workflows`、`workflow-versions`、`waiting`、`metrics`、`events`、`heartbeats`、`dlq` 等目录分类
+- `metrics` 的粒度是**每节点一个文件**（`metrics/<instanceId>__<nodeId>.json`），不是每实例一个；旧的整实例布局仍可恢复并会被逐步取代
+- 同一条记录的并发写入会合并成一次落盘，但 `persist()` 返回时保证"本次或更新的值"已原子落盘，不会丢失已确认的写入
+- 启动恢复跨集合并行，集合内并发回放；并发度可用 `STORAGE_RESTORE_CONCURRENCY` 调整（默认 16）
 - 启动时无法解析的记录会移动到对应分类的 `corrupt/`，不阻断其他数据恢复
 - 包含 JavaScript 函数或闭包的工作流定义不能序列化；启动时应先关闭自动恢复，重新注册定义，再调用 `engine.resumeRunningInstancesFromStorage()`
 - 本地文件存储不提供跨进程锁，同一个 `STORAGE_DIR` 只能由一个引擎进程使用
@@ -427,6 +431,18 @@ curl http://localhost:3345/workflow-api/v1/workflows
 2. **并发控制** - 调整 `MAX_CONCURRENT_INSTANCES` 和 `MAX_CONCURRENT_NODES`
 3. **资源清理** - 配置合理的 `INSTANCE_TTL_HOURS` 和 `EVENT_RETENTION_DAYS`
 4. **日志优化** - 生产环境设置 `LOG_LEVEL=warn`
+5. **fsync 取舍** - `FSYNC_ON_WRITE=true` 会让完整节点循环从约 1,500 ops/s 降到约 87 ops/s。只在必须扛住主机级崩溃/断电时开启；普通进程重启由原子 rename 保障，不需要它
+6. **查询带上过滤条件** - `queryInstances`/`queryEvents` 在按 `workflowId`/`status`/`parentInstanceId`（事件为 `instanceId`/`eventType`）过滤时走二级索引；不带过滤条件是全量扫描
+7. **启动慢时调 `STORAGE_RESTORE_CONCURRENCY`** - 默认 16 对 NVMe 偏保守；实例数上万时 `connect()` 本身就是可用规模的天花板
+
+### 存储层改动注意事项
+
+改 `MemoryStorage`/`LocalFileStorage` 前先读这几条，它们都是有意为之而非疏漏：
+
+- **所有对 `instances`/`events` 的增删只能走 `putInstance`/`dropInstance`/`putEvent`/`dropEvent`**。绕过它们直接 `map.set(...)` 会让二级索引静默失配——查询结果仍然正确（narrowing 之后还会完整过滤一遍），只是索引退化成全表扫描，测不出来也报不了错
+- **`updateNodeMetrics` 必须保持"替换而非就地修改"**。持久化路径借用 Map 里的引用当快照，就地修改会让快照在脚下被改掉
+- **`peek*` 一律是 `protected`，不要提升到 `StorageProvider` 接口上**。引擎会修改 load 出来的实例，返回活引用会让内存状态在 CAS 校验前就被改掉
+- **索引类改动要断言索引本身的规模**，不能只断言查询结果——参见 `src/storage/__tests__/MemoryStorage.indexes.test.ts` 里的 `indexSizesForTest`
 
 ## 安全建议
 
@@ -436,6 +452,61 @@ curl http://localhost:3345/workflow-api/v1/workflows
 - ✅ 启用审计日志（`AUDIT_LOG_ENABLED=true`）
 
 ## 更新日志
+
+### v3.0.0（2026 年 9 月 16 日）
+
+破坏性变更来自引擎类重命名（`WorkflowEngineV2` → `WorkflowEngine`，见 `006aa34`）。**下面的存储层改动本身是向后兼容的**——公开 API 与 `StorageProvider` 接口均未出现破坏性变更，新增的 `deleteInstanceMetrics()` 是可选方法，旧的整实例 metrics 文件仍可恢复。
+
+#### 存储层吞吐
+
+保持单进程 + 本地文件存储不变（不引入 Redis / 集群 / 外部数据库），消除热路径上的浪费。
+
+**写入路径**
+
+- `metrics` 改为**按节点一个文件**（`metrics/<instanceId>__<nodeId>.json`）。此前每次 `updateNodeMetrics` 都会重写整份含所有节点的记录，累计写入量是 Θ(nodes²)——100 节点工作流要写 1.55MB 才存下 15KB。内存形态与公开 API 不变，只有磁盘布局变了；旧的整实例文件仍能恢复
+- `saveInstance`/`casUpdateInstance` 的全量 deepClone 从 3 次降到 1 次（借用 `protected peek*` 引用替代两次重复 `loadInstance`）
+- `persist()` 按 key 合并已排队的写入：同一条记录的并发写只落盘一次。**不引入持久性窗口**——调用方仍要等到"含自己的值或更新的值"落盘才返回
+- 新增 `deleteInstanceMetrics()`（可选方法），`ArchiveManager` 归档后一并清理 metrics，修掉随归档量增长的内存/磁盘泄漏
+
+**查询路径**
+
+- `MemoryStorage` 新增二级索引：instances 按 `workflowId`/`status`/`parentInstanceId`，events 按 `instanceId`/`eventType`。查询从最小的匹配桶出发而非全量扫描
+- 索引只在选择度足够高时使用（候选桶 ≤ 全量的 50%）；桶接近全量时走索引反而更慢，此时退回顺序扫描
+- 所有对 `instances`/`events` 的增删**必须**走 `putInstance`/`dropInstance`/`putEvent`/`dropEvent` 四个私有入口，否则索引会静默失配
+- 排序键提出比较器（decorate-sort-undecorate），`toEpochMs` 不再跑 O(N log N) 次
+
+**清理与启动**
+
+- 清理路径改为精确删除（按内存侧刚删掉的 id），不再物化整个事件库求差集；孤儿文件由每小时一次的低频清扫兜底
+- `saveHeartbeat` 不再为找一个前值而深拷贝全部 heartbeat
+- 启动恢复跨集合并行、集合内并发回放（`workflow-versions` 因读-改-写保持串行）；新增 `STORAGE_RESTORE_CONCURRENCY`
+
+**顺带修掉的两个既有 bug**
+
+- **内存/磁盘失配**：多个并发写同一条记录且共享的落盘失败时，只有最后一代回滚，回滚到的却是倒数第二个写入者的值，内存因此领先磁盘。改为回滚到这批写入开始前的状态
+- **搜索索引陈旧**：`WorkflowInstanceControl` 直接写 `getInstancesMap()` 绕过索引同步，pause/resume/cancel 后按 status 检索仍返回旧值。改走新增的 `InstanceManager.replaceInstance()`
+
+**实测（`pnpm bench`，见 `src/benchmarks/storage-writes.test.ts`）**
+
+下表是单机单次运行的数字，run-to-run 有 10~20% 波动，看数量级而非精确值：
+
+| 指标                                  | 改动前        | 改动后           |
+| ------------------------------------- | ------------- | ---------------- |
+| 完整节点循环                          | 853 ops/s     | 1,527 ops/s      |
+| `casUpdateInstance`                   | 1,719 ops/s   | 2,482 ops/s      |
+| metrics 累计写入（100 节点）          | 1,551,480 B   | 51,060 B         |
+| metrics 增长（100 vs 50 节点）        | 3.92x（平方） | 2.00x（线性）    |
+| 并发 200 次写同一记录                 | 200 次落盘    | 1 次落盘         |
+| 完整节点循环（fsync=true）            | 35 ops/s      | ~87 ops/s        |
+| `queryInstances` 高选择度（1/50k）    | 2,632 ops/s   | 134,187 ops/s    |
+| `queryInstances` 中选择度（2.5k/50k） | 1,928 ops/s   | 4,009 ops/s      |
+| 启动恢复                              | 未测量        | 17,205 records/s |
+
+**未做（有意）**
+
+- 实例写入的缓冲/刷盘间隔：实例是系统记录，刷盘窗口意味着已确认的工作流状态可能在崩溃时消失
+- `ExecutionOrchestrator` 每次重试的整实例持久化：重试计数必须在退避期间的崩溃后存活，而实例是单个 JSON 文档、没有部分写入路径
+- 公开的只读 borrow API：引擎会修改 load 出来的实例，返回活引用会破坏 CAS 契约
 
 ### v2.2.0（2026 年 9 月）
 
@@ -468,7 +539,7 @@ curl http://localhost:3345/workflow-api/v1/workflows
 
 ## 最后更新
 
-- **日期**: 2026-09-15
-- **版本**: 2.2.0
+- **日期**: 2026-09-16
+- **版本**: 3.0.0
 - **维护者**: Sario
 - **许可证**: MIT

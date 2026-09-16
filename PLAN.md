@@ -1,6 +1,8 @@
 # ts-runit-lite 四维改进计划
 
 > **背景**：项目 v2.2.0 功能已趋于完善，但在命名一致性、架构可选性、生产案例覆盖和存储可插拔性上存在短板，容易被更聚焦的竞品淹没。以下按四个维度拆解问题并给出可执行的改进路线。
+>
+> **2026-09-16（v3.0.0）**：存储层的**吞吐**问题已在本计划之外单独做完（写放大、重复克隆、写合并、二级索引、清理与启动恢复的 O(N) 扫描），详见 CLAUDE.md 更新日志。本计划第四节因此只剩**设计**问题（接口门槛、继承耦合、类型安全）；推进 4.4 前请先读该节新增的前置约束，剩余的规模瓶颈见新增的 4.5（内存占用）。
 
 ---
 
@@ -225,6 +227,16 @@ pnpm add ts-workflow-engine-lite express helmet cors
 | 无中间件/拦截器模式                      | 🟡 中    | 缓存、审计、指标等横切关注点无法在存储层统一处理 |
 | `StorageClient` 是 `any`                 | 🟡 中    | 类型安全缺失                                     |
 
+> **2026-09-16 更新**：吞吐相关的问题已在 v3.0.0 单独处理完毕（见 CLAUDE.md 更新日志），**不在**本节的重构范围内，也不应作为推进本节重构的理由：
+>
+> - metrics 的 Θ(nodes²) 写放大（改为按节点拆文件）
+> - 实例写入的重复 deepClone（借用 `protected peek*` 引用）
+> - 写队列只串行不合并
+> - 查询无二级索引
+> - 清理与启动恢复的 O(N) 扫描
+>
+> 上表剩下的都是**设计问题**（接口门槛、继承耦合、类型安全），性能已不是推进它们的动因。同时注意这轮改动给 4.4 增加了新的约束，见该节。
+
 ### 改进方案
 
 #### 4.1 接口分层：核心 + 可选能力
@@ -398,6 +410,29 @@ class CacheStorageMiddleware implements StorageProvider {
 
 #### 4.4 LocalFileStorage 重构
 
+> **2026-09-16 前置约束（v3.0.0 之后必读）**
+>
+> 这轮吞吐改造在 `MemoryStorage` 上引入了若干**受保护/私有**的内部设施，`LocalFileStorage` 依赖它们工作。改成组合模式时必须一并设计好出路，否则会静默丢掉正确性或性能：
+>
+> 1. **`protected peek*`（`peekInstance`/`peekInstanceMetrics`/`peekHeartbeat`）**
+>    持久化路径靠它们借用存储中的引用当快照，避免每次写入多做两次全量 deepClone。组合模式下 `LocalFileStorage` 不再是子类，拿不到 `protected` 成员。
+>    **不要**为此把 `peek*` 提升到公开接口——引擎会修改 load 出来的实例，返回活引用会让内存状态在 CAS 校验前被改掉，破坏 CAS 契约。可行方向是让 `MemoryStorage` 的写入方法直接返回它存进 Map 的那份 clone（当初因 `StorageProvider` 声明 `Promise<void>` 而放弃，组合模式下内部接口可以自由些）。
+>
+> 2. **二级索引与四个写入入口**
+>    `instances`/`events` 的增删只能走 `putInstance`/`dropInstance`/`putEvent`/`dropEvent`，索引才不会失配。组合模式下 `LocalFileStorage` 通过 `this.memory.saveInstance(...)` 调用，天然走公开方法，这一条反而更安全——但**不要**在外层再持有一份 instances Map，否则又出现两个真相来源。
+>
+> 3. **`updateNodeMetrics` 必须保持"替换而非就地修改"**
+>    就地修改会让已借出的快照在脚下被改掉。
+>
+> 4. **`lastCleaned*Ids` 是 `protected` 的清理回执**
+>    清理路径靠它精确删文件，不再物化整个事件库求差集。组合模式下需要把它变成清理方法的返回值。
+>
+> 5. **草图里"内存 miss 则读磁盘"的模型与现状不符**
+>    当前 `LocalFileStorage` 启动时全量恢复进内存，**运行期读取从不落盘**。改成 lazy load 是一个独立的语义变更（影响 `queryInstances` 的完整性——按 workflowId 查询时磁盘上未加载的实例算不算数？），不要顺手夹带进重构里。真正的内存天花板问题见下方"内存占用"一节。
+>
+> 6. **回归护栏**
+>    重构后必须保证 `src/storage/__tests__/` 下的 12 个文件全绿（尤其 `MemoryStorage.indexes.test.ts` 的索引规模断言、`LocalFileStorage.coalescing.test.ts` 的失败回滚），并用 `pnpm bench` 对照 CLAUDE.md v3.0.0 记录的基线，确认没有性能倒退。
+
 将 `LocalFileStorage extends MemoryStorage` 改为组合模式：
 
 ```typescript
@@ -419,6 +454,24 @@ class LocalFileStorage implements StorageProvider {
 }
 ```
 
+#### 4.5 内存占用：v3.0.0 之后真正剩下的天花板
+
+> 2026-09-16 新增。吞吐（CPU + 写放大）已经处理完毕，**内存**是单进程规模现在的主要限制，且未在 v3.0.0 中解决。
+
+现状：
+
+- `LocalFileStorage extends MemoryStorage` 意味着每条记录都常驻内存——磁盘只是恢复边界，不是冷存储
+- `InstanceManager.loadFromStorage()` 会把每个实例**再深拷贝一份**进 `InstanceManager.instances`，与 `MemoryStorage.instances` 是同一批数据的两份常驻副本
+- v3.0.0 已修掉归档实例的 metrics 泄漏（`deleteInstanceMetrics`），但 `InstanceManager.instances` 里的条目仍不会被 `ArchiveManager` 清掉
+
+按影响/风险排序的增量做法（**不要**为此直接上大重构）：
+
+1. **把 `instanceManager.removeInstance(instanceId)` 接进 `ArchiveManager` 的终态处理**（该方法已存在且会清理搜索索引）。改动小、独立可验证
+2. **评估 `InstanceManager.instances` 这份副本是否必要**。`MemoryStorage.instances` 已经是同一批数据，若能读穿到存储层就能直接省掉一半实例内存。这是最大的单项内存收益，但耦合风险高，应单独立项
+3. **只有在 1、2 都做完仍不够时**，才考虑 4.4 草图里的 lazy load / 冷热分层——注意它会改变 `queryInstances` 的完整性语义（见 4.4 前置约束第 5 条）
+
+护栏：`src/benchmarks/workflow-engine.test.ts` 有堆 <200MB 的断言，`src/benchmarks/load-test.test.ts` 有「100 个实例堆增量 <20MB」的断言。任何内存相关改动都应先看这两条。
+
 ---
 
 ## 五、实施路线图
@@ -427,14 +480,14 @@ class LocalFileStorage implements StorageProvider {
 
 > 存储接口是扩展性的基础，其他改进都依赖它。
 
-| 周  | 任务                                       | 产出                         |
-| --- | ------------------------------------------ | ---------------------------- |
-| W1  | 1. StorageProvider 接口分层（核心 + 可选） | 类型定义 + 迁移指南          |
-| W1  | 2. 存储适配器注册机制                      | `storage/registry.ts`        |
-| W1  | 3. LocalFileStorage 改为组合模式           | 重构 + 测试                  |
-| W2  | 4. 内置中间件（Metrics、Cache、Audit）     | 中间件实现                   |
-| W2  | 5. 更新 bootstrap/createStorage 使用注册表 | 向后兼容                     |
-| W2  | 6. 添加 SQLite 存储适配器示例              | `examples/storage-sqlite.ts` |
+| 周  | 任务                                       | 产出                             |
+| --- | ------------------------------------------ | -------------------------------- |
+| W1  | 1. StorageProvider 接口分层（核心 + 可选） | 类型定义 + 迁移指南              |
+| W1  | 2. 存储适配器注册机制                      | `storage/registry.ts`            |
+| W1  | 3. LocalFileStorage 改为组合模式           | 重构 + 测试（先读 4.4 前置约束） |
+| W2  | 4. 内置中间件（Metrics、Cache、Audit）     | 中间件实现                       |
+| W2  | 5. 更新 bootstrap/createStorage 使用注册表 | 向后兼容                         |
+| W2  | 6. 添加 SQLite 存储适配器示例              | `examples/storage-sqlite.ts`     |
 
 ### Phase 2：API 层可选化（1.5 周）
 
