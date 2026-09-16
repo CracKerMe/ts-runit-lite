@@ -349,7 +349,8 @@ export class WorkflowInstanceControl {
       return inMemory;
     }
 
-    this.instanceManager.getInstancesMap().set(instanceId, fresh);
+    // 走 replaceInstance 而不是直接写内部 Map：后者会跳过搜索索引同步
+    this.instanceManager.replaceInstance(fresh);
     return fresh;
   }
 
@@ -366,9 +367,7 @@ export class WorkflowInstanceControl {
         if (!persisted) {
           current.version = 1;
           await storage.saveInstance(current);
-          this.instanceManager
-            .getInstancesMap()
-            .set(current.instanceId, current);
+          this.instanceManager.replaceInstance(current);
           return current;
         }
       }

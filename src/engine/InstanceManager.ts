@@ -120,6 +120,19 @@ export class InstanceManager {
   }
 
   /**
+   * 用一份新的快照替换内存中的实例，并同步搜索索引。
+   *
+   * 控制操作（pause/resume/cancel）此前直接 `getInstancesMap().set(...)`
+   * 写内部 Map，绕过了索引同步——实例状态改了，但按 status 搜索到的还是
+   * 旧值。任何需要"就地换掉某个实例"的地方都应该走这里，而不是拿着活
+   * Map 自己写。
+   */
+  replaceInstance(instance: WorkflowInstance): void {
+    this.instances.set(instance.instanceId, instance);
+    this.syncSearchIndex(instance);
+  }
+
+  /**
    * 更新实例（使用 CAS 乐观并发控制）
    * 如果版本不匹配，会从存储重新加载并重试
    */
