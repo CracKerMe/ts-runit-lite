@@ -13,8 +13,6 @@
     "tests",
     "src/**/__tests__",
     "src/**/*.test.ts",
-    "src/demo",
-    "src/test",
     "src/testing/testWorkflow.ts"
   ]
 }

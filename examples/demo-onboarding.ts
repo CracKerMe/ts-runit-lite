@@ -3,8 +3,8 @@
  * Demo 工作流定义
  * 用于演示和测试，与核心代码分离
  */
-import type { WorkflowDefinition } from "../model/Workflow";
-import { Logger } from "../utils/Logger";
+import type { WorkflowDefinition } from "../src/model/Workflow";
+import { Logger } from "../src/utils/Logger";
 
 export const demoWorkflow: WorkflowDefinition = {
   id: "user-onboarding",

@@ -1,9 +1,11 @@
 import { pathToFileURL } from "node:url";
 
-import { bootstrap } from "../bootstrap";
-import { destroyContainer } from "../container";
-import type { WorkflowDefinition } from "../model/Workflow";
-import { Logger } from "../utils/Logger";
+import {
+  bootstrap,
+  destroyContainer,
+  Logger,
+  type WorkflowDefinition,
+} from "../src/index";
 
 // 测试工作流定义
 const testWorkflow: WorkflowDefinition = {

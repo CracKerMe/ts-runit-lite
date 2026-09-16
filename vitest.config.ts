@@ -37,7 +37,6 @@ export default defineConfig({
       exclude: [
         "src/**/*.test.ts",
         "src/**/*.spec.ts",
-        "src/test/**",
         "src/api/console/web/**",
         "src/api/console/tracing/**",
       ],

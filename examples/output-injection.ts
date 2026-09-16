@@ -4,14 +4,14 @@
  * 验证后续节点能够通过 ${nodeId.output.path} 语法读取前置节点的输出
  */
 
-import { bootstrap } from "../bootstrap";
-import { destroyContainer } from "../container";
 import {
+  bootstrap,
+  destroyContainer,
   interpolateExpressions,
   interpolateObject,
-} from "../engine/ExpressionEvaluator";
-import type { WorkflowDefinition } from "../model/Workflow";
-import { Logger } from "../utils/Logger";
+  Logger,
+  type WorkflowDefinition,
+} from "../src/index";
 
 async function testOutputInjection() {
   console.log("\n=== 测试：节点输出引用功能 ===\n");

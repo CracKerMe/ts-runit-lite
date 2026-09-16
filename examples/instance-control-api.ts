@@ -4,10 +4,15 @@
  * Tests retry, skip, compensate, and node status endpoints
  */
 
-import { bootstrap } from "../bootstrap";
-import { destroyContainer } from "../container";
-import type { WorkflowDefinition } from "../model/Workflow";
-import { errorMessage } from "../utils/Logger";
+import {
+  bootstrap,
+  destroyContainer,
+  type WorkflowDefinition,
+} from "../src/index";
+
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
 
 async function testInstanceControlAPI() {
   console.log("\n=== Testing Instance Control API Endpoints ===\n");

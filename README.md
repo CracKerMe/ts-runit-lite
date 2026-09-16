@@ -32,7 +32,7 @@ and run the checked-in quick start:
 
 ```bash
 pnpm install
-pnpm example:quickstart
+pnpm example quickstart
 ```
 
 ## 5-minute TypeScript quick start
@@ -102,11 +102,11 @@ create a second engine sharing that container) without calling
 ## Run the examples
 
 ```bash
-pnpm example:quickstart        # minimal embedded workflow
-pnpm example:order             # condition branch and multi-step order workflow
-pnpm example:embedded-express  # mounting createWorkflowRouter into a host Express app
-pnpm example:error-handling    # catching WorkflowNotFoundError / InstanceNotFoundError
-pnpm dev                       # event-driven built-in demo
+pnpm example quickstart            # minimal embedded workflow
+pnpm example order-processing      # condition branch and multi-step order workflow
+pnpm example embedded-express-app  # mounting createWorkflowRouter into a host Express app
+pnpm example error-handling        # catching WorkflowNotFoundError / InstanceNotFoundError
+pnpm dev                           # event-driven built-in demo
 ```
 
 ## Run the REST API
@@ -259,14 +259,14 @@ The complete field-by-field reference, examples, and common mistakes are in
 [`docs/NODE_REFERENCE.md`](./docs/NODE_REFERENCE.md). The core execution model
 is:
 
-| Node family | Success | Failure / recovery |
-| --- | --- | --- |
-| `action`, `http`, `sql`, `queue`, `notification` | Persist output, then follow `next` | Retry; then `failureNext`, otherwise instance failure / DLQ |
-| `condition`, `router` | Evaluate and follow the selected branch | Invalid expression or unmatched route fails the node |
-| `transform` | Build an output object from expressions | Expression errors fail the node; prior outputs are unchanged |
-| `wait`, `event`, `approval` | Persist waiting state and resume via `next` | Timeout/cancellation is failure unless explicitly handled |
-| `loop`, `subworkflow`, `join` | Complete aggregate/child work and continue | Body/child failure or missing join branch propagates |
-| `rollback` | Run compensation and follow `rollbackTo` / `next` | Compensation can fail; it is not a transaction boundary |
+| Node family                                      | Success                                           | Failure / recovery                                           |
+| ------------------------------------------------ | ------------------------------------------------- | ------------------------------------------------------------ |
+| `action`, `http`, `sql`, `queue`, `notification` | Persist output, then follow `next`                | Retry; then `failureNext`, otherwise instance failure / DLQ  |
+| `condition`, `router`                            | Evaluate and follow the selected branch           | Invalid expression or unmatched route fails the node         |
+| `transform`                                      | Build an output object from expressions           | Expression errors fail the node; prior outputs are unchanged |
+| `wait`, `event`, `approval`                      | Persist waiting state and resume via `next`       | Timeout/cancellation is failure unless explicitly handled    |
+| `loop`, `subworkflow`, `join`                    | Complete aggregate/child work and continue        | Body/child failure or missing join branch propagates         |
+| `rollback`                                       | Run compensation and follow `rollbackTo` / `next` | Compensation can fail; it is not a transaction boundary      |
 
 `next` is a batch of successor IDs and may fan out. `failureNext` is a failure
 path, not an implicit rollback. Runtime outputs live in
@@ -402,11 +402,11 @@ to share one transactional database. It is a better fit when multiple
 processes must coordinate through Postgres; it is less attractive when a
 single embedded service and local files are the desired deployment boundary.
 
-| Requirement | Best fit |
-| --- | --- |
-| Embedded, single-process, low operational overhead | `ts-workflow-engine-lite` |
-| Distributed workers, long-lived timers, workflow-as-a-platform | Temporal |
-| Postgres-native coordination and transactional state | pg-workflows |
+| Requirement                                                    | Best fit                  |
+| -------------------------------------------------------------- | ------------------------- |
+| Embedded, single-process, low operational overhead             | `ts-workflow-engine-lite` |
+| Distributed workers, long-lived timers, workflow-as-a-platform | Temporal                  |
+| Postgres-native coordination and transactional state           | pg-workflows              |
 
 The key boundary is not “how many node types are available”; it is the
 durability and coordination model your workflow requires.
@@ -445,20 +445,26 @@ are not installed.
 
 ## Examples
 
-| Example                                                         | Script                          | Description                                      |
-| --------------------------------------------------------------- | ------------------------------- | ------------------------------------------------ |
-| [quickstart.ts](./examples/quickstart.ts)                       | `pnpm example:quickstart`       | Minimal workflow with condition routing          |
-| [order-processing.ts](./examples/order-processing.ts)           | `pnpm example:order`            | Multi-step order processing pipeline             |
-| [embedded-express-app.ts](./examples/embedded-express-app.ts)   | `pnpm example:embedded-express` | Embed API in a host Express app                  |
-| [error-handling.ts](./examples/error-handling.ts)               | `pnpm example:error-handling`   | Named error classes and retry handling           |
-| [multi-tenant-workflow.ts](./examples/multi-tenant-workflow.ts) | `pnpm example:multi-tenant`     | Tenant-isolated workflows with condition routing |
-| [approval-pipeline.ts](./examples/approval-pipeline.ts)         | `pnpm example:approval`         | Long-running approval with timeout               |
-| [http-orchestration.ts](./examples/http-orchestration.ts)       | `pnpm example:http`             | HTTP integration with conditional routing        |
-| [parallel-fan-out.ts](./examples/parallel-fan-out.ts)           | `pnpm example:parallel`         | Parallel processing with merge                   |
-| [graceful-degradation.ts](./examples/graceful-degradation.ts)   | `pnpm example:degradation`      | Fallback paths and dead letter queues            |
-| [headless-engine.ts](./examples/headless-engine.ts)             | `pnpm example:headless`         | Pure programmatic usage, no API server           |
-| [worker-pool.ts](./examples/worker-pool.ts)                     | `pnpm example:worker-pool`      | CPU-intensive tasks with worker threads          |
-| [cron-data-sync.ts](./examples/cron-data-sync.ts)               | `pnpm example:cron-sync`        | Scheduled data synchronization                   |
+| Example                                                           | Script                                | Description                                      |
+| ----------------------------------------------------------------- | ------------------------------------- | ------------------------------------------------ |
+| [quickstart.ts](./examples/quickstart.ts)                         | `pnpm example quickstart`             | Minimal workflow with condition routing          |
+| [order-processing.ts](./examples/order-processing.ts)             | `pnpm example order-processing`       | Multi-step order processing pipeline             |
+| [embedded-express-app.ts](./examples/embedded-express-app.ts)     | `pnpm example embedded-express-app`   | Embed API in a host Express app                  |
+| [error-handling.ts](./examples/error-handling.ts)                 | `pnpm example error-handling`         | Named error classes and retry handling           |
+| [multi-tenant-workflow.ts](./examples/multi-tenant-workflow.ts)   | `pnpm example multi-tenant-workflow`  | Tenant-isolated workflows with condition routing |
+| [approval-pipeline.ts](./examples/approval-pipeline.ts)           | `pnpm example approval-pipeline`      | Long-running approval with timeout               |
+| [http-orchestration.ts](./examples/http-orchestration.ts)         | `pnpm example http-orchestration`     | HTTP integration with conditional routing        |
+| [parallel-fan-out.ts](./examples/parallel-fan-out.ts)             | `pnpm example parallel-fan-out`       | Parallel processing with merge                   |
+| [graceful-degradation.ts](./examples/graceful-degradation.ts)     | `pnpm example graceful-degradation`   | Fallback paths and dead letter queues            |
+| [headless-engine.ts](./examples/headless-engine.ts)               | `pnpm example headless-engine`        | Pure programmatic usage, no API server           |
+| [worker-pool.ts](./examples/worker-pool.ts)                       | `pnpm example worker-pool`            | CPU-intensive tasks with worker threads          |
+| [cron-data-sync.ts](./examples/cron-data-sync.ts)                 | `pnpm example cron-data-sync`         | Scheduled data synchronization                   |
+| [demo-onboarding.ts](./examples/demo-onboarding.ts)               | `pnpm example demo-onboarding`        | Event-driven onboarding demo                     |
+| [headless-no-express.ts](./examples/headless-no-express.ts)       | `pnpm example headless-no-express`    | Headless engine without Express installed        |
+| [data-processing.ts](./examples/data-processing.ts)               | `pnpm example data-processing`        | CSV import pipeline with cleaning and validation |
+| [event-timeout-workflow.ts](./examples/event-timeout-workflow.ts) | `pnpm example event-timeout-workflow` | Event waiting, timeout and rollback paths        |
+| [instance-control-api.ts](./examples/instance-control-api.ts)     | `pnpm example instance-control-api`   | Retry / skip / compensate instance control API   |
+| [output-injection.ts](./examples/output-injection.ts)             | `pnpm example output-injection`       | Referencing upstream node output via ${...}      |
 
 ## License
 

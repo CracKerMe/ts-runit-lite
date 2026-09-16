@@ -24,7 +24,7 @@ TypeScript 使用者可以使用 `moduleResolution: "NodeNext"` 或 `"Bundler"`�
 
 ```bash
 pnpm install
-pnpm example:quickstart
+pnpm example quickstart
 ```
 
 ## 5分钟 TypeScript 快速入门
@@ -78,9 +78,9 @@ try {
 
 该包提供了两种获取运行中 `WorkflowEngineV2` 的方式：
 
-| API | 适用场景 |
-| --- | --- |
-| `bootstrap(options)` | **默认选择。** 一次调用即可配置存储、密钥管理器、可选的线程池和归档功能以及优雅关闭，然后返回 `{ engine, container }`。与 CLI 和上述快速入门中的用法一致。 |
+| API                                                                              | 适用场景                                                                                                                                                                                                                                                                                                           |
+| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `bootstrap(options)`                                                             | **默认选择。** 一次调用即可配置存储、密钥管理器、可选的线程池和归档功能以及优雅关闭，然后返回 `{ engine, container }`。与 CLI 和上述快速入门中的用法一致。                                                                                                                                                         |
 | `createContainer(options)` + `setContainer(container)` + `createEngine(options)` | 当你需要更精细地控制初始化顺序（例如，在创建容器和引擎之间注册工作流或自定义 `SecretManager`），或者你需要针对自己管理的容器组合多个引擎时使用。`createEngine()` 会从 `setContainer()` 设置的全进程单例中读取其容器——请先调用 `createContainer` 和 `setContainer`，否则会抛出 `"Container not initialized"` 错误。 |
 
 `bootstrap()` 内部也会调用 `setContainer(container)`，因此它返回的 `container` 与 `createEngine()` 读取的全进程单例是同一个——你仍然可以在之后再次调用 `createEngine()`（例如，创建共享该容器的第二个引擎），而无需自己调用 `setContainer`。
@@ -88,11 +88,11 @@ try {
 ## 运行示例
 
 ```bash
-pnpm example:quickstart        # 最小化的嵌入式工作流
-pnpm example:order             # 条件分支和多步骤订单工作流
-pnpm example:embedded-express  # 将 createWorkflowRouter 挂载到宿主的 Express 应用中
-pnpm example:error-handling    # 捕获 WorkflowNotFoundError / InstanceNotFoundError
-pnpm dev                       # 事件驱动的内置演示
+pnpm example quickstart            # 最小化的嵌入式工作流
+pnpm example order-processing      # 条件分支和多步骤订单工作流
+pnpm example embedded-express-app  # 将 createWorkflowRouter 挂载到宿主的 Express 应用中
+pnpm example error-handling        # 捕获 WorkflowNotFoundError / InstanceNotFoundError
+pnpm dev                           # 事件驱动的内置演示
 ```
 
 ## 运行 REST API
@@ -144,10 +144,10 @@ app.listen(3000);
 
 ### 存储模式
 
-| 模式 | 预期用途 | 重启恢复 |
-| --- | --- | --- |
-| `file` | 默认的单进程运行时 | 支持 |
-| `memory` | 测试和有意为之的临时用途 | 不支持 |
+| 模式     | 预期用途                 | 重启恢复 |
+| -------- | ------------------------ | -------- |
+| `file`   | 默认的单进程运行时       | 支持     |
+| `memory` | 测试和有意为之的临时用途 | 不支持   |
 
 在测试环境之外，默认启用本地文件持久化。运行时状态存储在 `.ts-workflow-engine-data/` 目录下，每条记录使用一个 JSON 文件，并通过原子化的临时文件替换来写入：
 
@@ -206,14 +206,14 @@ await engine.resumeRunningInstancesFromStorage();
 
 完整的字段级参考、示例和常见错误请参阅 [`docs/NODE_REFERENCE.md`](./docs/NODE_REFERENCE.md)。核心执行模型如下：
 
-| 节点族 | 成功 | 失败 / 恢复 |
-| --- | --- | --- |
-| `action`, `http`, `sql`, `queue`, `notification` | 持久化输出，然后跟随 `next` | 重试；然后执行 `failureNext`，否则实例失败 / 进入 DLQ |
-| `condition`, `router` | 计算并跟随选定的分支 | 无效的表达式或未匹配的路由会导致节点失败 |
-| `transform` | 从表达式构建输出对象 | 表达式错误会导致节点失败；先前的输出保持不变 |
-| `wait`, `event`, `approval` | 持久化等待状态并通过 `next` 恢复 | 超时/取消即为失败，除非显式处理 |
-| `loop`, `subworkflow`, `join` | 完成聚合/子任务并继续 | 循环体/子任务失败或缺失 join 分支会向上传播失败 |
-| `rollback` | 运行补偿并跟随 `rollbackTo` / `next` | 补偿可能会失败；它不是事务边界 |
+| 节点族                                           | 成功                                 | 失败 / 恢复                                           |
+| ------------------------------------------------ | ------------------------------------ | ----------------------------------------------------- |
+| `action`, `http`, `sql`, `queue`, `notification` | 持久化输出，然后跟随 `next`          | 重试；然后执行 `failureNext`，否则实例失败 / 进入 DLQ |
+| `condition`, `router`                            | 计算并跟随选定的分支                 | 无效的表达式或未匹配的路由会导致节点失败              |
+| `transform`                                      | 从表达式构建输出对象                 | 表达式错误会导致节点失败；先前的输出保持不变          |
+| `wait`, `event`, `approval`                      | 持久化等待状态并通过 `next` 恢复     | 超时/取消即为失败，除非显式处理                       |
+| `loop`, `subworkflow`, `join`                    | 完成聚合/子任务并继续                | 循环体/子任务失败或缺失 join 分支会向上传播失败       |
+| `rollback`                                       | 运行补偿并跟随 `rollbackTo` / `next` | 补偿可能会失败；它不是事务边界                        |
 
 `next` 是后继 ID 的集合，可以扇出（fan out）。`failureNext` 是失败路径，不是隐式的回滚。运行时输出存放在 `state.nodes[id].output` 中；请勿自行定义 `output`。输入 Schema 在执行前进行检查，输出 Schema 在返回后进行检查。
 
@@ -261,12 +261,12 @@ ARCHIVE_CLEANUP_INTERVAL_MS=21600000
 
 针对最高频的查找/并发失败模式，引擎会抛出命名的错误类（从包根目录导出），因此调用者可以使用 `instanceof` 进行检查，而不是匹配 `Error.message` 字符串：
 
-| 类 | 抛出时机 |
-| --- | --- |
-| `WorkflowNotFoundError` | `engine.start()` / `engine.dryRun()` / 内部执行引用了未注册的 `workflowId`（可选特定 `version`）。包含 `.workflowId` 和 `.version`。 |
-| `InstanceNotFoundError` | `engine.signal()` / `engine.query()` / `engine.update()` / `waitForCompletion()` 引用了无法解析为已存储实例的 `instanceId`。包含 `.instanceId`。 |
-| `ConcurrencyConflictError` | 乐观并发控制 (CAS) 在持久化实例更新时耗尽了其重试预算——另一个写入者一直在 `instance.version` 的竞争中获胜。包含 `.instanceId` 和 `.attempts`。 |
-| `LockAcquisitionError` | `ConcurrencyControl.withLock()` 无法在其重试预算内获取锁。包含 `.resourceId`。 |
+| 类                         | 抛出时机                                                                                                                                         |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `WorkflowNotFoundError`    | `engine.start()` / `engine.dryRun()` / 内部执行引用了未注册的 `workflowId`（可选特定 `version`）。包含 `.workflowId` 和 `.version`。             |
+| `InstanceNotFoundError`    | `engine.signal()` / `engine.query()` / `engine.update()` / `waitForCompletion()` 引用了无法解析为已存储实例的 `instanceId`。包含 `.instanceId`。 |
+| `ConcurrencyConflictError` | 乐观并发控制 (CAS) 在持久化实例更新时耗尽了其重试预算——另一个写入者一直在 `instance.version` 的竞争中获胜。包含 `.instanceId` 和 `.attempts`。   |
+| `LockAcquisitionError`     | `ConcurrencyControl.withLock()` 无法在其重试预算内获取锁。包含 `.resourceId`。                                                                   |
 
 其他失败（超时、无效的状态转换、最大实例数限制、通过 `DataValidationError` 进行的 Schema 验证）仍然会抛出普通的 `Error` 或其现有的错误类——请参阅 [`examples/error-handling.ts`](./examples/error-handling.ts) 以获取可运行的演示。
 
@@ -289,11 +289,11 @@ ARCHIVE_CLEANUP_INTERVAL_MS=21600000
 
 当 PostgreSQL 已经是事实上的记录系统，并且你希望队列、锁定和工作流状态共享同一个事务型数据库时，请选择支持 PostgreSQL 的引擎，例如 [pg-workflows](https://github.com/boazsegev/pg-workflows)。当多个进程必须通过 Postgres 进行协调时，它是更好的选择；当期望的部署边界是单个嵌入式服务和本地文件时，它的吸引力较小。
 
-| 需求 | 最佳选择 |
-| --- | --- |
-| 嵌入式、单进程、低运营开销 | `ts-workflow-engine-lite` |
-| 分布式 Worker、长生命周期计时器、平台化工作流 | Temporal |
-| Postgres 原生协调和事务状态 | pg-workflows |
+| 需求                                          | 最佳选择                  |
+| --------------------------------------------- | ------------------------- |
+| 嵌入式、单进程、低运营开销                    | `ts-workflow-engine-lite` |
+| 分布式 Worker、长生命周期计时器、平台化工作流 | Temporal                  |
+| Postgres 原生协调和事务状态                   | pg-workflows              |
 
 关键的界限不在于“有多少种节点类型可用”，而在于你的工作流所需的持久性和协调模型。
 
@@ -327,20 +327,26 @@ pnpm add ts-workflow-engine-lite express cors helmet morgan ws swagger-ui-dist
 
 ## 示例
 
-| 示例 | 脚本 | 描述 |
-| --- | --- | --- |
-| [quickstart.ts](./examples/quickstart.ts) | `pnpm example:quickstart` | 带有条件路由的最小化工作流 |
-| [order-processing.ts](./examples/order-processing.ts) | `pnpm example:order` | 多步骤订单处理流水线 |
-| [embedded-express-app.ts](./examples/embedded-express-app.ts) | `pnpm example:embedded-express` | 将 API 嵌入到宿主 Express 应用中 |
-| [error-handling.ts](./examples/error-handling.ts) | `pnpm example:error-handling` | 命名的错误类和重试处理 |
-| [multi-tenant-workflow.ts](./examples/multi-tenant-workflow.ts) | `pnpm example:multi-tenant` | 带有条件路由的租户隔离工作流 |
-| [approval-pipeline.ts](./examples/approval-pipeline.ts) | `pnpm example:approval` | 带有超时的长时间运行审批 |
-| [http-orchestration.ts](./examples/http-orchestration.ts) | `pnpm example:http` | 带有条件路由的 HTTP 集成 |
-| [parallel-fan-out.ts](./examples/parallel-fan-out.ts) | `pnpm example:parallel` | 带有合并的并行处理 |
-| [graceful-degradation.ts](./examples/graceful-degradation.ts) | `pnpm example:degradation` | 降级路径和死信队列 |
-| [headless-engine.ts](./examples/headless-engine.ts) | `pnpm example:headless` | 纯编程方式使用，无 API 服务器 |
-| [worker-pool.ts](./examples/worker-pool.ts) | `pnpm example:worker-pool` | 使用 Worker 线程处理 CPU 密集型任务 |
-| [cron-data-sync.ts](./examples/cron-data-sync.ts) | `pnpm example:cron-sync` | 计划内的数据同步 |
+| 示例                                                              | 脚本                                  | 描述                                |
+| ----------------------------------------------------------------- | ------------------------------------- | ----------------------------------- |
+| [quickstart.ts](./examples/quickstart.ts)                         | `pnpm example quickstart`             | 带有条件路由的最小化工作流          |
+| [order-processing.ts](./examples/order-processing.ts)             | `pnpm example order-processing`       | 多步骤订单处理流水线                |
+| [embedded-express-app.ts](./examples/embedded-express-app.ts)     | `pnpm example embedded-express-app`   | 将 API 嵌入到宿主 Express 应用中    |
+| [error-handling.ts](./examples/error-handling.ts)                 | `pnpm example error-handling`         | 命名的错误类和重试处理              |
+| [multi-tenant-workflow.ts](./examples/multi-tenant-workflow.ts)   | `pnpm example multi-tenant-workflow`  | 带有条件路由的租户隔离工作流        |
+| [approval-pipeline.ts](./examples/approval-pipeline.ts)           | `pnpm example approval-pipeline`      | 带有超时的长时间运行审批            |
+| [http-orchestration.ts](./examples/http-orchestration.ts)         | `pnpm example http-orchestration`     | 带有条件路由的 HTTP 集成            |
+| [parallel-fan-out.ts](./examples/parallel-fan-out.ts)             | `pnpm example parallel-fan-out`       | 带有合并的并行处理                  |
+| [graceful-degradation.ts](./examples/graceful-degradation.ts)     | `pnpm example graceful-degradation`   | 降级路径和死信队列                  |
+| [headless-engine.ts](./examples/headless-engine.ts)               | `pnpm example headless-engine`        | 纯编程方式使用，无 API 服务器       |
+| [worker-pool.ts](./examples/worker-pool.ts)                       | `pnpm example worker-pool`            | 使用 Worker 线程处理 CPU 密集型任务 |
+| [cron-data-sync.ts](./examples/cron-data-sync.ts)                 | `pnpm example cron-data-sync`         | 计划内的数据同步                    |
+| [demo-onboarding.ts](./examples/demo-onboarding.ts)               | `pnpm example demo-onboarding`        | 事件驱动的入职演示                  |
+| [headless-no-express.ts](./examples/headless-no-express.ts)       | `pnpm example headless-no-express`    | 未安装 Express 时的无头引擎         |
+| [data-processing.ts](./examples/data-processing.ts)               | `pnpm example data-processing`        | CSV 导入流水线，含清洗与校验        |
+| [event-timeout-workflow.ts](./examples/event-timeout-workflow.ts) | `pnpm example event-timeout-workflow` | 事件等待、超时与回滚路径            |
+| [instance-control-api.ts](./examples/instance-control-api.ts)     | `pnpm example instance-control-api`   | 重试 / 跳过 / 补偿的实例控制 API    |
+| [output-injection.ts](./examples/output-injection.ts)             | `pnpm example output-injection`       | 通过 ${...} 引用上游节点输出        |
 
 ## 许可证
 

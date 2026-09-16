@@ -1,11 +1,13 @@
 // oxlint-disable no-explicit-any -- dynamic types used throughout this module
 import dotenv from "dotenv";
 import { pathToFileURL } from "node:url";
-import { bootstrap } from "../bootstrap";
-import { destroyContainer } from "../container";
-import type { WorkflowInstance } from "../model/Instance";
-import type { WorkflowDefinition } from "../model/Workflow";
-import { Logger } from "../utils/Logger";
+import {
+  bootstrap,
+  destroyContainer,
+  Logger,
+  type WorkflowDefinition,
+  type WorkflowInstance,
+} from "../src/index";
 
 // 加载环境变量
 dotenv.config();

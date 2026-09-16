@@ -149,28 +149,28 @@ src/
 
 ```bash
 # 基础命令
-pnpm install              # 安装依赖
-pnpm dev                  # 开发模式（默认本地文件存储）
-pnpm dev:api              # 启动 API 服务器
-pnpm build                # 编译 TypeScript
-pnpm test                 # 运行单元测试
-pnpm test:watch           # 监视模式测试
-pnpm test:coverage        # 生成测试覆盖率报告
+pnpm install                         # 安装依赖
+pnpm dev                             # 开发模式（默认本地文件存储）
+pnpm dev:api                         # 启动 API 服务器
+pnpm build                           # 编译 TypeScript
+pnpm test                            # 运行单元测试
+pnpm test:watch                      # 监视模式测试
+pnpm test:coverage                   # 生成测试覆盖率报告
 
 # 代码检查
-pnpm typecheck            # TypeScript 类型检查（tsc --noEmit）
-pnpm lint                 # oxlint 检查
-pnpm lint:fix             # oxlint 检查（自动修复）
-pnpm format               # oxfmt 格式化（自动修复）
-pnpm format:check         # oxfmt 格式检查（不修复）
-pnpm check                # oxlint + oxfmt（自动修复）
-pnpm check:ci             # oxlint + oxfmt 检查（不修复）
-pnpm check:all            # 全量检查（typecheck + check:ci）
+pnpm typecheck                       # TypeScript 类型检查（tsc --noEmit）
+pnpm lint                            # oxlint 检查
+pnpm lint:fix                        # oxlint 检查（自动修复）
+pnpm format                          # oxfmt 格式化（自动修复）
+pnpm format:check                    # oxfmt 格式检查（不修复）
+pnpm check                           # oxlint + oxfmt（自动修复）
+pnpm check:ci                        # oxlint + oxfmt 检查（不修复）
+pnpm check:all                       # 全量检查（typecheck + check:ci）
 
 # 演示和示例
-pnpm dev                  # 运行内置演示工作流
-pnpm test:workflow        # 运行事件/超时示例
-pnpm test:data-processing # 运行数据处理示例
+pnpm dev                             # 运行内置演示工作流
+pnpm example event-timeout-workflow  # 运行事件/超时示例
+pnpm example data-processing         # 运行数据处理示例
 ```
 
 ## 测试准则
@@ -386,7 +386,6 @@ STORAGE_DIR=/var/lib/ts-workflow-engine-lite
 | [README.md](./README.md)                                           | 项目概述、快速开始                                                         |
 | [docs/NODE_REFERENCE.md](./docs/NODE_REFERENCE.md)                 | 15 种节点类型完整字段参考（AI Agent 友好，生成工作流 JSON 前建议先读这份） |
 | [docs/BUSINESS_SCENARIOS.md](./docs/BUSINESS_SCENARIOS.md)         | 多节点组合模式与行业业务场景全景图、能力边界与选型清单                     |
-| [src/demo/EXAMPLE_README.md](./src/demo/EXAMPLE_README.md)         | 示例工作流与 API 调用                                                      |
 | [src/engine/executors/README.md](./src/engine/executors/README.md) | HTTP、SQL、Queue 节点说明                                                  |
 | [.env.example](./.env.example)                                     | 环境变量配置                                                               |
 

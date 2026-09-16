@@ -4,6 +4,7 @@ pnpm-lock.yaml
 
 # Build output
 dist/
+.ts-workflow-engine-data/
 .ts-runit-data/
 archive/
 build/
