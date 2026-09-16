@@ -30,6 +30,19 @@ export interface LocalFileStorageOptions {
    * write latency.
    */
   fsyncOnWrite?: boolean;
+  /**
+   * Which collections `fsyncOnWrite` actually applies to.
+   *
+   * Defaults to {@link DEFAULT_FSYNC_COLLECTIONS}: everything that is a
+   * system of record or user-visible audit history, but NOT `metrics` or
+   * `heartbeats`. Those two are derived observability data — nothing in the
+   * engine makes a control-flow decision from them — and they account for
+   * two of the three writes on the per-node hot path, so fsync'ing them
+   * makes every node execution pay for durability nobody needs.
+   *
+   * Pass an explicit list to override, e.g. to fsync metrics too.
+   */
+  fsyncCollections?: readonly Collection[];
 }
 
 /**
@@ -62,6 +75,36 @@ type Collection =
   | "webhook-deliveries";
 
 /**
+ * `FSYNC_ON_WRITE=true` 默认作用于哪些集合。
+ *
+ * 取舍很简单：**系统记录与用户可见的审计历史要 fsync，纯派生的可观测性
+ * 数据不要**。
+ *
+ * 不在此列的只有 `metrics` 与 `heartbeats`：
+ *  - metrics 是派生数据，引擎不会据此做任何控制流决策，唯一消费方是
+ *    MetricsAggregator；而它占了每节点 3 次写入中的 2 次，fsync 它等于
+ *    让每个节点执行都为没人需要的持久性买单（实测 fsync 下整个节点循环
+ *    从 1,400 ops/s 掉到 35 ops/s）；
+ *  - heartbeat 本就被明确定义为恢复提示而非事务状态（见 HeartbeatManager
+ *    的注释），且已被去抖到每 10s 一次。
+ *
+ * `events` **保留** fsync：它是用户可见的审计历史，默认把它降级为
+ * best-effort 是那种会侵蚀信任的静默改动。需要的话可用 `fsyncCollections`
+ * 显式调整。
+ */
+const DEFAULT_FSYNC_COLLECTIONS: readonly Collection[] = [
+  "instances",
+  "workflows",
+  "workflow-metadata",
+  "workflow-versions",
+  "waiting",
+  "events",
+  "dlq",
+  "webhooks",
+  "webhook-deliveries",
+];
+
+/**
  * Durable single-process storage backed by one JSON file per record.
  *
  * MemoryStorage remains the hot index and query implementation. Files are the
@@ -80,6 +123,8 @@ export class LocalFileStorage extends MemoryStorage {
   readonly directory: string;
   private readonly directories: Record<Collection, string>;
   private readonly fsyncOnWrite: boolean;
+  /** fsyncOnWrite 实际生效的集合，见 {@link DEFAULT_FSYNC_COLLECTIONS}。 */
+  private readonly fsyncCollections: ReadonlySet<Collection>;
   private readonly directoryFsyncQueues = new Map<string, Promise<void>>();
   private writeQueues = new Map<string, Promise<void>>();
   /**
@@ -117,6 +162,11 @@ export class LocalFileStorage extends MemoryStorage {
     this.directory = typeof options === "string" ? options : options.directory;
     this.fsyncOnWrite =
       typeof options === "string" ? false : (options.fsyncOnWrite ?? false);
+    this.fsyncCollections = new Set(
+      typeof options === "string"
+        ? DEFAULT_FSYNC_COLLECTIONS
+        : (options.fsyncCollections ?? DEFAULT_FSYNC_COLLECTIONS),
+    );
     this.directories = {
       instances: path.join(this.directory, "instances"),
       workflows: path.join(this.directory, "workflows"),
@@ -701,6 +751,11 @@ export class LocalFileStorage extends MemoryStorage {
       return;
     }
 
+    // fsync 按集合决定：系统记录与审计历史要，纯派生的 metrics/heartbeats
+    // 不要。见 DEFAULT_FSYNC_COLLECTIONS 的取舍说明。
+    const shouldFsync =
+      this.fsyncOnWrite && this.fsyncCollections.has(collection);
+
     const operation = async () => {
       // 进入执行阶段：本次写操作不再接受新的合并，后续调用要另起一个。
       this.queuedWrites.delete(key);
@@ -713,7 +768,7 @@ export class LocalFileStorage extends MemoryStorage {
       // I/O 放大 2-3 倍而没有任何运行时收益（需要可读性时用 jq）。
       const contents = JSON.stringify(pending);
 
-      if (!this.fsyncOnWrite) {
+      if (!shouldFsync) {
         // 默认路径：不需要 fsync 时用 writeFile 一次性完成，不额外打开/
         // 持有文件句柄，保持当前的写入开销不变。
         await fs.promises.writeFile(temp, contents, "utf8");
@@ -733,7 +788,7 @@ export class LocalFileStorage extends MemoryStorage {
 
       await fs.promises.rename(temp, key);
 
-      if (this.fsyncOnWrite) {
+      if (shouldFsync) {
         // rename 本身是目录元数据的变更，同样需要刷盘才能在断电后存活，
         // 否则重启后可能看到旧文件、新文件，或目录项丢失。
         await this.fsyncDirectory(path.dirname(key));

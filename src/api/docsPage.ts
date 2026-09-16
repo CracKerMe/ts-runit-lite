@@ -334,8 +334,13 @@ ${fnRows}
 
   <section id="integration">
     <h2>持久化与外部集成增强</h2>
-    <p><code>FSYNC_ON_WRITE=true</code> 时，<code>LocalFileStorage</code> 每次写入会 fsync 临时文件和所在目录，
+    <p><code>FSYNC_ON_WRITE=true</code> 时，<code>LocalFileStorage</code> 写入会 fsync 临时文件和所在目录，
     换取主机级崩溃/断电下的持久性（代价是写入延迟明显增加）；默认 <code>false</code>，仅保证原子 rename 后文件本身完整。</p>
+    <p>fsync 按集合生效：<code>instances</code>、<code>events</code>、<code>waiting</code>、<code>workflows*</code>、
+    <code>dlq</code>、<code>webhooks*</code> 等系统记录与审计历史会 fsync；<code>metrics</code> 与 <code>heartbeats</code>
+    <strong>不会</strong>——它们是纯派生的可观测性数据，却占了每节点 3 次写入中的 2 次，fsync 它们会让每个节点执行
+    都为没人需要的持久性买单。代价是主机级崩溃可能丢失最近的 metrics 与 heartbeat，实例状态与事件历史不受影响。
+    需要时可通过 <code>LocalFileStorageOptions.fsyncCollections</code> 显式覆盖。</p>
     <p><code>createWorkflowRouter()</code> / <code>createWorkflowRouterBundle()</code> 允许宿主 Express 应用将工作流 API
     挂载为普通 <code>express.Router</code>，无需通过 <code>startApiServer()</code> 独立运行。</p>
     <p>高频查找/并发错误改用具名错误类导出（<code>WorkflowNotFoundError</code>、<code>InstanceNotFoundError</code>、

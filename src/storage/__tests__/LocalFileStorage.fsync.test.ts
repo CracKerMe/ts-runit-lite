@@ -84,6 +84,108 @@ describe("LocalFileStorage – fsyncOnWrite option", () => {
     expect(restored?.instanceId).toBe("inst-fsync");
   });
 
+  /**
+   * fsync 按集合生效：系统记录与审计历史要，纯派生的可观测性数据不要。
+   *
+   * 这是本次唯一带真实权衡的语义调整——开了 FSYNC_ON_WRITE 的用户，
+   * 在主机级崩溃时可能丢失最近的 metrics 与 heartbeat，但 instances 与
+   * events 的持久性一字未改。
+   */
+  it("skips fsync for metrics and heartbeats but keeps it for instances and events", async () => {
+    storage = new LocalFileStorage({ directory, fsyncOnWrite: true });
+    await storage.connect();
+
+    const syncedTargets: string[] = [];
+    const realOpen = fs.promises.open.bind(fs.promises);
+    vi.spyOn(fs.promises, "open").mockImplementation(
+      async (...args: Parameters<typeof fs.promises.open>) => {
+        const handle = await realOpen(...args);
+        const target = String(args[0]);
+        const originalSync = handle.sync.bind(handle);
+        handle.sync = async () => {
+          syncedTargets.push(target);
+          return originalSync();
+        };
+        return handle;
+      },
+    );
+
+    // 派生数据：不应触发任何 fsync
+    await storage.updateNodeMetrics("inst-1", "node-1", {
+      nodeId: "node-1",
+      retryCount: 0,
+      status: "completed",
+    });
+    expect(syncedTargets).toHaveLength(0);
+
+    await storage.saveHeartbeat({
+      heartbeatKey: "inst-1:node-1",
+      instanceId: "inst-1",
+      nodeId: "node-1",
+      lastBeat: Date.now(),
+      deadline: Date.now() + 60_000,
+    } as any);
+    expect(syncedTargets).toHaveLength(0);
+
+    // 系统记录：必须 fsync
+    await storage.saveInstance(sampleInstance("inst-1"));
+    const afterInstance = syncedTargets.length;
+    expect(afterInstance).toBeGreaterThan(0);
+
+    // 审计历史：同样保留 fsync
+    await storage.saveEvent({
+      id: "evt-1",
+      instanceId: "inst-1",
+      workflowId: "wf",
+      eventType: "test",
+      timestamp: Date.now(),
+      payload: {},
+    } as any);
+    expect(syncedTargets.length).toBeGreaterThan(afterInstance);
+
+    // 数据本身仍要可读
+    expect((await storage.loadInstanceMetrics("inst-1"))?.instanceId).toBe(
+      "inst-1",
+    );
+  });
+
+  it("honours an explicit fsyncCollections override", async () => {
+    storage = new LocalFileStorage({
+      directory,
+      fsyncOnWrite: true,
+      fsyncCollections: ["metrics"],
+    });
+    await storage.connect();
+
+    const syncedTargets: string[] = [];
+    const realOpen = fs.promises.open.bind(fs.promises);
+    vi.spyOn(fs.promises, "open").mockImplementation(
+      async (...args: Parameters<typeof fs.promises.open>) => {
+        const handle = await realOpen(...args);
+        const target = String(args[0]);
+        const originalSync = handle.sync.bind(handle);
+        handle.sync = async () => {
+          syncedTargets.push(target);
+          return originalSync();
+        };
+        return handle;
+      },
+    );
+
+    // 显式要求 metrics 走 fsync
+    await storage.updateNodeMetrics("inst-1", "node-1", {
+      nodeId: "node-1",
+      retryCount: 0,
+      status: "completed",
+    });
+    expect(syncedTargets.length).toBeGreaterThan(0);
+
+    // 而不在列表里的 instances 此时不再 fsync
+    const afterMetrics = syncedTargets.length;
+    await storage.saveInstance(sampleInstance("inst-1"));
+    expect(syncedTargets).toHaveLength(afterMetrics);
+  });
+
   it("coalesces concurrent directory fsyncs for the same collection", async () => {
     storage = new LocalFileStorage({ directory, fsyncOnWrite: true });
     await storage.connect();

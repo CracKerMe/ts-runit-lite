@@ -345,7 +345,8 @@ export interface WorkflowDefinition {
 
 ### 12. 数据持久化与外部集成增强
 
-- `FSYNC_ON_WRITE=true` 时，`LocalFileStorage` 每次写入会 fsync 临时文件和所在目录，换取主机级崩溃/断电下的持久性（代价是写入延迟明显增加）；默认 `false`，仅保证原子 rename 后文件本身完整
+- `FSYNC_ON_WRITE=true` 时，`LocalFileStorage` 写入会 fsync 临时文件和所在目录，换取主机级崩溃/断电下的持久性（代价是写入延迟明显增加）；默认 `false`，仅保证原子 rename 后文件本身完整
+- fsync 按集合生效：`instances`/`events`/`waiting`/`workflows*`/`dlq`/`webhooks*` 等系统记录与审计历史会 fsync；`metrics` 与 `heartbeats` **不会**——它们是纯派生的可观测性数据，却占了每节点 3 次写入中的 2 次。代价是主机级崩溃可能丢失最近的 metrics 与 heartbeat，实例状态与事件历史不受影响；需要时用 `LocalFileStorageOptions.fsyncCollections` 显式覆盖
 - `createWorkflowRouter()` / `createWorkflowRouterBundle()` 允许宿主 Express 应用将工作流 API 挂载为普通 `express.Router`，无需通过 `startApiServer()` 独立运行；`server.ts` 内部也复用同一套路由装配逻辑
 - 高频查找/并发错误改用具名错误类导出（`WorkflowNotFoundError`、`InstanceNotFoundError`、`ConcurrencyConflictError`、`LockAcquisitionError`），支持 `instanceof` 判断而非匹配错误消息字符串
 - `HttpNodeConfig`/`SqlNodeConfig`/`QueueNodeConfig`/`ConditionNodeConfig`/`RouterNodeConfig`/`LoopNodeConfig` 等类型与 SQL/Queue 连接池注册函数已从包根重导出，外部消费方无需深入 `dist/src/engine/executors/*`
