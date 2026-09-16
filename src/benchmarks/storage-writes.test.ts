@@ -412,3 +412,46 @@ describe("LocalFileStorage — write path throughput", () => {
     expect(elapsed).toBeLessThan(120_000);
   });
 });
+
+/**
+ * 启动恢复的耗时。
+ *
+ * 这不提升稳态吞吐，但直接决定"多少实例还能开得起机"——几万条记录时
+ * connect() 本身就是可用规模的天花板。
+ */
+describe("LocalFileStorage — startup restore", () => {
+  it("connect() with a populated data directory", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tswe-bench-r-"));
+    const seed = new LocalFileStorage(dir);
+    await seed.connect();
+
+    const RECORDS = 3000;
+    for (let i = 0; i < RECORDS; i++) {
+      await seed.saveInstance({
+        ...makeInstance(20),
+        instanceId: `inst-${i}`,
+      } as WorkflowInstance);
+      await seed.updateNodeMetrics(
+        `inst-${i}`,
+        "n1",
+        makeNodeMetrics("n1", "completed"),
+      );
+    }
+    await seed.close();
+
+    const reopened = new LocalFileStorage(dir);
+    const started = process.hrtime.bigint();
+    await reopened.connect();
+    const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
+
+    const restored = await reopened.listInstances();
+    console.log(
+      `  connect() restored ${restored.length} instances + ${RECORDS} metrics ` +
+        `in ${elapsedMs.toFixed(1)}ms (${Math.round((RECORDS / elapsedMs) * 1000).toLocaleString()} records/s)`,
+    );
+    expect(restored).toHaveLength(RECORDS);
+
+    await reopened.close();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});

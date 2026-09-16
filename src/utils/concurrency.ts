@@ -13,6 +13,19 @@
 export const DEFAULT_CONCURRENCY = 16;
 
 /**
+ * 启动恢复时的并发度，可用 `STORAGE_RESTORE_CONCURRENCY` 覆盖。
+ *
+ * 默认的 16 对机械盘是稳妥值，但对 NVMe 偏保守；实例数上万时，
+ * `connect()` 的耗时本身就会成为可用规模的天花板。
+ */
+export function getRestoreConcurrency(): number {
+  const raw = process.env.STORAGE_RESTORE_CONCURRENCY;
+  if (!raw) return DEFAULT_CONCURRENCY;
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_CONCURRENCY;
+}
+
+/**
  * 以受限并发对 `items` 逐项执行 `worker`，返回与输入顺序一致的结果数组。
  *
  * 任意一项抛错都会导致整体 reject（语义与 `Promise.all` 一致）。

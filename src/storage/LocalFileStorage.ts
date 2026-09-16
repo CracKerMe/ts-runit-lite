@@ -3,7 +3,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { WorkflowInstance } from "../model/Instance";
 import type { WorkflowDefinition } from "../model/Workflow";
-import { mapWithConcurrency } from "../utils/concurrency";
+import {
+  getRestoreConcurrency,
+  mapWithConcurrency,
+} from "../utils/concurrency";
 import { Logger } from "../utils/Logger";
 import { MemoryStorage } from "./MemoryStorage";
 import type {
@@ -203,37 +206,51 @@ export class LocalFileStorage extends MemoryStorage {
     }
 
     await super.connect();
+
+    // instances 先恢复：updateNodeMetrics 会从实例里推导 workflowId，
+    // 恢复路径虽然走的是 saveInstanceMetrics 不触及那一步，但保持这个
+    // 顺序可以免去一个隐含的依赖。
     await this.restoreCollection("instances", async (id, value) =>
       super.saveInstance(this.restoreInstance(value, id)),
     );
-    await this.restoreCollection("workflows", async (_id, value) =>
-      super.saveWorkflow(value as WorkflowDefinition),
-    );
-    await this.restoreCollection("workflow-metadata", async (_id, value) =>
-      super.saveWorkflowWithMetadata(value as StoredWorkflow),
-    );
-    await this.restoreCollection("workflow-versions", async (_id, value) =>
-      super.saveWorkflowVersion(value as StoredWorkflowVersion),
-    );
-    await this.restoreCollection("waiting", async (_id, value) =>
-      super.saveEventWaitingState(value as EventWaitingState),
-    );
-    await this.restoreMetrics();
-    await this.restoreCollection("events", async (_id, value) =>
-      super.saveEvent(this.restoreEvent(value as EventRecord)),
-    );
-    await this.restoreCollection("heartbeats", async (_id, value) =>
-      super.saveHeartbeat(value as HeartbeatState),
-    );
-    await this.restoreCollection("dlq", async (id, value) => {
-      this.deadLetterEntries.set(id, value);
-    });
-    await this.restoreCollection("webhooks", async (id, value) => {
-      this.webhookEntries.set(id, value);
-    });
-    await this.restoreCollection("webhook-deliveries", async (id, value) => {
-      this.webhookDeliveryEntries.set(id, value);
-    });
+
+    // 其余集合写入互不相交的内存 Map，可以并行恢复。此前它们是 11 次
+    // 串行 await，几万条记录时 connect() 本身就会成为可用规模的天花板。
+    await Promise.all([
+      this.restoreCollection("workflows", async (_id, value) =>
+        super.saveWorkflow(value as WorkflowDefinition),
+      ),
+      this.restoreCollection("workflow-metadata", async (_id, value) =>
+        super.saveWorkflowWithMetadata(value as StoredWorkflow),
+      ),
+      // workflow-versions 的回放必须串行：saveWorkflowVersion 对嵌套 Map
+      // 做读-改-写，并发会丢版本。
+      this.restoreCollection(
+        "workflow-versions",
+        async (_id, value) =>
+          super.saveWorkflowVersion(value as StoredWorkflowVersion),
+        true,
+      ),
+      this.restoreCollection("waiting", async (_id, value) =>
+        super.saveEventWaitingState(value as EventWaitingState),
+      ),
+      this.restoreMetrics(),
+      this.restoreCollection("events", async (_id, value) =>
+        super.saveEvent(this.restoreEvent(value as EventRecord)),
+      ),
+      this.restoreCollection("heartbeats", async (_id, value) =>
+        super.saveHeartbeat(value as HeartbeatState),
+      ),
+      this.restoreCollection("dlq", async (id, value) => {
+        this.deadLetterEntries.set(id, value);
+      }),
+      this.restoreCollection("webhooks", async (id, value) => {
+        this.webhookEntries.set(id, value);
+      }),
+      this.restoreCollection("webhook-deliveries", async (id, value) => {
+        this.webhookDeliveryEntries.set(id, value);
+      }),
+    ]);
     this.connected = true;
     Logger.info(
       "system",
@@ -724,9 +741,17 @@ export class LocalFileStorage extends MemoryStorage {
     }
   }
 
+  /**
+   * @param serialReplay 回放阶段是否必须串行。
+   *
+   * 绝大多数集合的回放是 `map.set(互不相同的 key, clone(value))`，彼此独立，
+   * 可以并发。唯一的例外是 `workflow-versions`——它对嵌套 Map 做读-改-写
+   * （见 MemoryStorage.saveWorkflowVersion），并发会丢版本。
+   */
   private async restoreCollection(
     collection: Collection,
     restore: (id: string, value: unknown) => Promise<void>,
+    serialReplay = false,
   ): Promise<void> {
     const ids = await this.listFiles(collection);
 
@@ -736,6 +761,7 @@ export class LocalFileStorage extends MemoryStorage {
       | { ok: true; id: string; value: unknown }
       | { ok: false; id: string; error: unknown };
 
+    const concurrency = getRestoreConcurrency();
     const results = await mapWithConcurrency<string, ReadResult>(
       ids,
       async (id) => {
@@ -750,19 +776,30 @@ export class LocalFileStorage extends MemoryStorage {
           return { ok: false, id, error };
         }
       },
+      concurrency,
     );
 
-    // 恢复本身保持串行：restore 回调会写入共享的内存索引，
-    // 并发执行会引入顺序依赖和竞态。
-    for (const result of results) {
-      if (!result.ok) {
-        await this.quarantine(collection, result.id, result.error);
-        continue;
-      }
+    // 隔离串行执行：并发 rename 会互相干扰。
+    const corrupt = results.filter((result) => !result.ok);
+    for (const result of corrupt) {
+      await this.quarantine(
+        collection,
+        result.id,
+        (result as { error: unknown }).error,
+      );
+    }
 
-      // restore 回调抛错是**我们的 bug**，不是数据损坏。若一并隔离，
-      // 一条完全合法的记录会被 rename 进 corrupt/ 而永久丢失。
-      // 这里只记录并跳过，文件留在原地等修好的版本读取。
+    const healthy = results.filter(
+      (result): result is { ok: true; id: string; value: unknown } => result.ok,
+    );
+
+    // restore 回调抛错是**我们的 bug**，不是数据损坏。若一并隔离，
+    // 一条完全合法的记录会被 rename 进 corrupt/ 而永久丢失。
+    // 这里只记录并跳过，文件留在原地等修好的版本读取。
+    const replayOne = async (result: {
+      id: string;
+      value: unknown;
+    }): Promise<void> => {
       try {
         await restore(result.id, result.value);
       } catch (error) {
@@ -773,6 +810,12 @@ export class LocalFileStorage extends MemoryStorage {
           error instanceof Error ? error.stack : String(error),
         );
       }
+    };
+
+    if (serialReplay) {
+      for (const result of healthy) await replayOne(result);
+    } else {
+      await mapWithConcurrency(healthy, replayOne, concurrency);
     }
   }
 
