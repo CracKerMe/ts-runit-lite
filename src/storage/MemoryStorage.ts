@@ -70,6 +70,32 @@ export class MemoryStorage implements StorageProvider {
     };
   }
 
+  /**
+   * 返回存储中的实例**引用**，不做深拷贝。
+   *
+   * 仅供子类（LocalFileStorage）在内部使用：持久化路径需要一份"写入前的
+   * 快照"用于失败回滚，以及一份"待写入磁盘的值"。这两者此前都各自走一次
+   * `loadInstance()`，也就是各自一次全量 deepClone——实例最多携带 1000 条
+   * history，每个节点转换都要克隆三遍，纯属浪费。
+   *
+   * 借用引用的安全性依据：`instances` 这个 Map 的条目永远是**整体替换**
+   * （`saveInstance`/`casUpdateInstance` 都是 `set(id, 全新的 clone)`），
+   * 从不就地修改。因此一个已被取出的引用等价于一份按约定不可变的快照，
+   * 后续写入不会从它脚下改掉内容。
+   *
+   * ⚠️ 不要把它暴露到 StorageProvider 接口上：引擎侧（ExecutionOrchestrator）
+   * 会直接修改 load 出来的实例，返回活引用会让内存存储在 CAS 校验之前
+   * 就被改掉，破坏 CAS 契约。
+   */
+  protected peekInstance(instanceId: string): WorkflowInstance | undefined {
+    return this.instances.get(instanceId);
+  }
+
+  /** 见 {@link peekInstance}；heartbeats 同样是整体替换。 */
+  protected peekHeartbeat(heartbeatKey: string): HeartbeatState | undefined {
+    return this.heartbeats.get(heartbeatKey);
+  }
+
   async saveInstance(instance: WorkflowInstance): Promise<void> {
     // 深拷贝以避免引用问题，使用自定义序列化避免循环引用
     const normalizedInstance = this.normalizeInstanceDates(instance);
@@ -430,6 +456,21 @@ export class MemoryStorage implements StorageProvider {
     );
   }
 
+  /**
+   * 删除一个实例的全部 metrics。
+   *
+   * 归档终态实例时调用：ArchiveManager 此前只删实例本身，metrics 记录会
+   * 一直留在内存（和磁盘）里，成为随归档量线性增长的泄漏。
+   */
+  async deleteInstanceMetrics(instanceId: string): Promise<void> {
+    this.instanceMetrics.delete(instanceId);
+    Logger.debug(
+      "system",
+      "storage",
+      `Instance metrics deleted for ${instanceId}`,
+    );
+  }
+
   async loadInstanceMetrics(
     instanceId: string,
   ): Promise<InstanceMetrics | null> {
@@ -437,6 +478,18 @@ export class MemoryStorage implements StorageProvider {
     return metrics ? this.deepClone(metrics) : null;
   }
 
+  /**
+   * 写入单个节点的 metrics。
+   *
+   * 注意这里是**替换而非就地修改**：旧实现直接在已存储的 InstanceMetrics
+   * 上写 `nodeMetrics[nodeId] = ...`，这让任何"先取出引用当快照、再写入"
+   * 的调用方拿到的快照会被就地改掉。改成浅拷贝一层（nodeMetrics 换成新
+   * 对象）后，已取出的引用才真正是不可变快照，
+   * {@link peekInstanceMetrics} 才能安全借用。
+   *
+   * 浅拷贝足够：被替换的只有 nodeMetrics 这一层的键，各个 NodeMetrics
+   * 值对象本身不会被就地修改。
+   */
   async updateNodeMetrics(
     instanceId: string,
     nodeId: string,
@@ -446,16 +499,17 @@ export class MemoryStorage implements StorageProvider {
     // Derive workflowId from the stored instance if available
     const workflowId =
       existing?.workflowId || this.instances.get(instanceId)?.workflowId || "";
-    const instanceMetrics: InstanceMetrics = existing || {
+
+    const instanceMetrics: InstanceMetrics = {
       instanceId,
       workflowId,
-      nodeMetrics: {},
-      createdAt: Date.now(),
+      createdAt: existing?.createdAt ?? Date.now(),
       updatedAt: Date.now(),
+      nodeMetrics: {
+        ...existing?.nodeMetrics,
+        [nodeId]: this.deepClone(metrics),
+      },
     };
-
-    instanceMetrics.nodeMetrics[nodeId] = metrics;
-    instanceMetrics.updatedAt = Date.now();
 
     this.instanceMetrics.set(instanceId, instanceMetrics);
     Logger.debug(
@@ -463,6 +517,17 @@ export class MemoryStorage implements StorageProvider {
       "storage",
       `Node metrics updated for ${instanceId}:${nodeId}`,
     );
+  }
+
+  /**
+   * 返回存储中 metrics 记录的**引用**，不做深拷贝。见 {@link peekInstance}。
+   *
+   * 安全性依赖于 {@link updateNodeMetrics} 的替换语义——不要把它改回就地修改。
+   */
+  protected peekInstanceMetrics(
+    instanceId: string,
+  ): InstanceMetrics | undefined {
+    return this.instanceMetrics.get(instanceId);
   }
 
   // Event history methods

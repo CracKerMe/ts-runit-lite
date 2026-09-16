@@ -119,6 +119,10 @@ export class ArchiveManager {
       if (this.storage) {
         try {
           await this.storage.deleteInstance(instanceId);
+          // metrics 与实例是分开存的，删实例不会带走它们。不清理的话
+          // metrics 会随归档量无上限累积在内存和磁盘上。可选方法，
+          // 自定义适配器没实现就跳过。
+          await this.storage.deleteInstanceMetrics?.(instanceId);
         } catch (deleteError: unknown) {
           Logger.warn(
             "system",

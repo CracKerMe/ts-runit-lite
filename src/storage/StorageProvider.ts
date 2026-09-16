@@ -202,6 +202,12 @@ export interface MetricsStorage {
     nodeId: string,
     metrics: NodeMetrics,
   ): Promise<void>;
+  /**
+   * 删除一个实例的全部 metrics。可选，以免破坏既有的自定义适配器。
+   *
+   * 归档终态实例时调用：不实现它的后端会让 metrics 随归档量持续累积。
+   */
+  deleteInstanceMetrics?(instanceId: string): Promise<void>;
 }
 
 /** Optional: event history persistence and querying. */
@@ -291,6 +297,8 @@ export interface StorageProvider extends StorageCore {
   // Instance metrics methods
   saveInstanceMetrics(metrics: InstanceMetrics): Promise<void>;
   loadInstanceMetrics(instanceId: string): Promise<InstanceMetrics | null>;
+  /** 见 {@link MetricsStorage.deleteInstanceMetrics}；可选以兼容既有适配器。 */
+  deleteInstanceMetrics?(instanceId: string): Promise<void>;
   updateNodeMetrics(
     instanceId: string,
     nodeId: string,

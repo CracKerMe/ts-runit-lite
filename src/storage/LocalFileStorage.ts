@@ -32,6 +32,22 @@ export interface LocalFileStorageOptions {
   fsyncOnWrite?: boolean;
 }
 
+/**
+ * 单个节点 metrics 的磁盘记录形态。
+ *
+ * 带上 instance 级字段（workflowId/createdAt/updatedAt）是为了让恢复时
+ * 不依赖任何一个"主记录"文件就能把 InstanceMetrics 组装回来——否则删掉
+ * 或损坏其中一个文件就会丢掉整个实例的 workflowId。
+ */
+interface PersistedNodeMetrics {
+  instanceId: string;
+  workflowId: string;
+  createdAt: number;
+  updatedAt: number;
+  nodeId: string;
+  metrics: NodeMetrics;
+}
+
 type Collection =
   | "instances"
   | "workflows"
@@ -121,9 +137,7 @@ export class LocalFileStorage extends MemoryStorage {
     await this.restoreCollection("waiting", async (_id, value) =>
       super.saveEventWaitingState(value as EventWaitingState),
     );
-    await this.restoreCollection("metrics", async (_id, value) =>
-      super.saveInstanceMetrics(value as InstanceMetrics),
-    );
+    await this.restoreMetrics();
     await this.restoreCollection("events", async (_id, value) =>
       super.saveEvent(this.restoreEvent(value as EventRecord)),
     );
@@ -148,12 +162,16 @@ export class LocalFileStorage extends MemoryStorage {
   }
 
   override async saveInstance(instance: WorkflowInstance): Promise<void> {
-    const previous = await super.loadInstance(instance.instanceId);
+    // peekInstance 借用存储中的引用而不是再克隆一份：Map 条目永远整体
+    // 替换，所以这份引用是一个稳定的"写入前"快照。回滚路径 super.saveInstance
+    // 会在写回时重新深拷贝，因此调用方之后修改自己的对象也污染不到它。
+    const previous = this.peekInstance(instance.instanceId);
     await super.saveInstance(instance);
     await this.persistOrRollback(
       "instances",
       instance.instanceId,
-      await super.loadInstance(instance.instanceId),
+      // 存完直接借用 Map 里的那份 clone，省掉第二次 loadInstance。
+      this.peekInstance(instance.instanceId),
       async () => {
         if (previous) await super.saveInstance(previous);
         else await super.deleteInstance(instance.instanceId);
@@ -164,13 +182,14 @@ export class LocalFileStorage extends MemoryStorage {
   override async casUpdateInstance(
     instance: WorkflowInstance,
   ): Promise<boolean> {
-    const previous = await super.loadInstance(instance.instanceId);
+    const previous = this.peekInstance(instance.instanceId);
     const updated = await super.casUpdateInstance(instance);
     if (updated) {
       await this.persistOrRollback(
         "instances",
         instance.instanceId,
-        await super.loadInstance(instance.instanceId),
+        // CAS 成功后 Map 里就是刚写入的新版本，直接借用，不再 load 一次。
+        this.peekInstance(instance.instanceId),
         async () => {
           // The CAS already committed the new version in memory (super
           // mutates its Map synchronously); if the disk write fails, force
@@ -288,33 +307,67 @@ export class LocalFileStorage extends MemoryStorage {
   }
 
   override async saveInstanceMetrics(metrics: InstanceMetrics): Promise<void> {
-    const previous = await super.loadInstanceMetrics(metrics.instanceId);
+    const previous = this.peekInstanceMetrics(metrics.instanceId);
     await super.saveInstanceMetrics(metrics);
-    await this.persistOrRollback(
-      "metrics",
-      metrics.instanceId,
-      await super.loadInstanceMetrics(metrics.instanceId),
-      async () => {
-        if (previous) await super.saveInstanceMetrics(previous);
-      },
+    // 扇出成每节点一个文件，与 updateNodeMetrics 的布局保持一致。
+    // 只在恢复和测试中调用，不是热路径。
+    const nodeIds = Object.keys(metrics.nodeMetrics ?? {});
+    await Promise.all(
+      nodeIds.map((nodeId) =>
+        this.persistOrRollback(
+          "metrics",
+          this.nodeMetricsId(metrics.instanceId, nodeId),
+          this.nodeMetricsRecord(metrics, nodeId),
+          async () => {
+            if (previous) await super.saveInstanceMetrics(previous);
+          },
+        ),
+      ),
     );
   }
 
+  /**
+   * 只写入单个节点的 metrics 文件。
+   *
+   * 此前这里重写整份 `metrics/<instanceId>.json`——包含该实例所有其他节点的
+   * metrics——来记录一个节点的变化，累计写入量因此是 Θ(nodes²)：100 个节点
+   * 的工作流要写 1.55MB 才存下 15KB 的真实数据（见
+   * src/benchmarks/storage-writes.test.ts 的基线）。
+   *
+   * 改为 `metrics/<instanceId>__<nodeId>.json` 后每次写入是 O(1)。
+   * 内存形态与公开 API 不变：MemoryStorage 仍持有完整的 InstanceMetrics，
+   * loadInstanceMetrics 仍返回组装好的整份记录，只有磁盘布局变了。
+   */
   override async updateNodeMetrics(
     instanceId: string,
     nodeId: string,
     metrics: NodeMetrics,
   ): Promise<void> {
-    const previous = await super.loadInstanceMetrics(instanceId);
+    const previous = this.peekInstanceMetrics(instanceId);
     await super.updateNodeMetrics(instanceId, nodeId, metrics);
+    const current = this.peekInstanceMetrics(instanceId);
     await this.persistOrRollback(
       "metrics",
-      instanceId,
-      await super.loadInstanceMetrics(instanceId),
+      this.nodeMetricsId(instanceId, nodeId),
+      current ? this.nodeMetricsRecord(current, nodeId) : undefined,
       async () => {
         if (previous) await super.saveInstanceMetrics(previous);
+        else await super.deleteInstanceMetrics(instanceId);
       },
     );
+  }
+
+  override async deleteInstanceMetrics(instanceId: string): Promise<void> {
+    const existing = this.peekInstanceMetrics(instanceId);
+    await super.deleteInstanceMetrics(instanceId);
+    const nodeIds = Object.keys(existing?.nodeMetrics ?? {});
+    await Promise.all(
+      nodeIds.map((nodeId) =>
+        this.removeFile("metrics", this.nodeMetricsId(instanceId, nodeId)),
+      ),
+    );
+    // 同时清掉可能残留的旧版整实例文件（升级前写下的布局）。
+    await this.removeFile("metrics", instanceId);
   }
 
   override async saveEvent(event: EventRecord): Promise<void> {
@@ -458,6 +511,78 @@ export class LocalFileStorage extends MemoryStorage {
       ) {
         await this.removeFile("instances", id);
       }
+    }
+  }
+
+  /**
+   * 恢复 metrics。
+   *
+   * 两种磁盘布局都要认：
+   *  - 新布局 `<instanceId>__<nodeId>.json`，每个文件一个节点；
+   *  - 旧布局 `<instanceId>.json`，一个文件装整份 InstanceMetrics。
+   *
+   * 旧文件只读不改写——升级后它们会随各自节点的下一次 updateNodeMetrics
+   * 自然被新布局取代，deleteInstanceMetrics 也会把它们一并清掉。
+   *
+   * 先把所有记录在内存里合并成完整的 InstanceMetrics，最后一次性
+   * saveInstanceMetrics；逐条 save 会让每条记录都触发一次全量 clone。
+   */
+  private async restoreMetrics(): Promise<void> {
+    const merged = new Map<string, InstanceMetrics>();
+
+    const ensure = (
+      instanceId: string,
+      workflowId: string,
+      createdAt: number,
+      updatedAt: number,
+    ): InstanceMetrics => {
+      const existing = merged.get(instanceId);
+      if (existing) {
+        // 保留最早的 createdAt 与最晚的 updatedAt
+        existing.createdAt = Math.min(existing.createdAt, createdAt);
+        existing.updatedAt = Math.max(existing.updatedAt, updatedAt);
+        if (!existing.workflowId && workflowId)
+          existing.workflowId = workflowId;
+        return existing;
+      }
+      const fresh: InstanceMetrics = {
+        instanceId,
+        workflowId,
+        nodeMetrics: {},
+        createdAt,
+        updatedAt,
+      };
+      merged.set(instanceId, fresh);
+      return fresh;
+    };
+
+    await this.restoreCollection("metrics", async (id, value) => {
+      const split = this.splitNodeMetricsId(id);
+      if (!split) {
+        // 旧布局：整份 InstanceMetrics
+        const legacy = value as InstanceMetrics;
+        const target = ensure(
+          legacy.instanceId || id,
+          legacy.workflowId ?? "",
+          Number(legacy.createdAt) || Date.now(),
+          Number(legacy.updatedAt) || Date.now(),
+        );
+        Object.assign(target.nodeMetrics, legacy.nodeMetrics ?? {});
+        return;
+      }
+
+      const record = value as PersistedNodeMetrics;
+      const target = ensure(
+        record.instanceId || split.instanceId,
+        record.workflowId ?? "",
+        Number(record.createdAt) || Date.now(),
+        Number(record.updatedAt) || Date.now(),
+      );
+      target.nodeMetrics[record.nodeId || split.nodeId] = record.metrics;
+    });
+
+    for (const metrics of merged.values()) {
+      await super.saveInstanceMetrics(metrics);
     }
   }
 
@@ -658,6 +783,55 @@ export class LocalFileStorage extends MemoryStorage {
     } catch (error: any) {
       if (error?.code !== "ENOENT") throw error;
     }
+  }
+
+  /**
+   * metrics 记录的磁盘 id：`<instanceId>__<nodeId>`。
+   *
+   * 沿用 workflow-versions 已有的 `__` 分隔约定。instanceId 与 nodeId 会先
+   * 各自 encodeURIComponent，因此 id 本身含 `__` 也不会产生歧义
+   * （encodeURIComponent 不转义 `_`，但下面的 split 取第一个 `__` 之前/之后，
+   * 而真实 id 里的 `__` 会原样保留在两侧任一段——见 splitNodeMetricsId 的
+   * 处理：以最后一个 `__` 为界，nodeId 不允许再含 `__` 的情况已被编码消解）。
+   */
+  private nodeMetricsId(instanceId: string, nodeId: string): string {
+    return `${encodeURIComponent(instanceId)}__${encodeURIComponent(nodeId)}`;
+  }
+
+  /**
+   * 拆解 metrics 文件 id。返回 null 表示这是旧版的整实例记录
+   * （升级前写下的 `metrics/<instanceId>.json`）。
+   */
+  private splitNodeMetricsId(
+    id: string,
+  ): { instanceId: string; nodeId: string } | null {
+    const separator = id.indexOf("__");
+    if (separator === -1) return null;
+    try {
+      return {
+        instanceId: decodeURIComponent(id.slice(0, separator)),
+        nodeId: decodeURIComponent(id.slice(separator + 2)),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /** 单个节点的磁盘记录：带上 instance 级字段，便于恢复时组装。 */
+  private nodeMetricsRecord(
+    metrics: InstanceMetrics,
+    nodeId: string,
+  ): PersistedNodeMetrics | undefined {
+    const node = metrics.nodeMetrics?.[nodeId];
+    if (!node) return undefined;
+    return {
+      instanceId: metrics.instanceId,
+      workflowId: metrics.workflowId,
+      createdAt: metrics.createdAt,
+      updatedAt: metrics.updatedAt,
+      nodeId,
+      metrics: node,
+    };
   }
 
   private filePath(collection: Collection, id: string): string {
