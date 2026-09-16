@@ -5,6 +5,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { WorkflowInstance } from "../model/Instance";
 import { LocalFileStorage } from "../storage/LocalFileStorage";
+import { MemoryStorage } from "../storage/MemoryStorage";
 import type { NodeMetrics } from "../storage/StorageProvider";
 
 /**
@@ -453,5 +454,50 @@ describe("LocalFileStorage — startup restore", () => {
 
     await reopened.close();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+/**
+ * 查询路径：二级索引的收益。
+ *
+ * 索引只在"过滤后的结果集远小于总量"时有意义——那恰好是生产上的常态
+ * （几万条实例里查某个 workflow 的第一页）。选择度越高收益越大。
+ */
+describe("MemoryStorage — indexed query throughput", () => {
+  it("queryInstances at 50k instances, varying selectivity", async () => {
+    const storage = new MemoryStorage();
+    await storage.connect();
+
+    const TOTAL = 50_000;
+    for (let i = 0; i < TOTAL; i++) {
+      await storage.saveInstance({
+        instanceId: `inst-${i}`,
+        // 1 条命中 wf-rare，5% 命中 wf-warm，其余 wf-bulk
+        workflowId: i === 0 ? "wf-rare" : i % 20 === 0 ? "wf-warm" : "wf-bulk",
+        currentNodes: [],
+        status: i % 3 === 0 ? "completed" : "running",
+        context: {},
+        history: [],
+        createdAt: new Date(1_700_000_000_000 + i),
+        updatedAt: new Date(1_700_000_000_000 + i),
+      } as WorkflowInstance);
+    }
+
+    for (const [label, workflowId] of [
+      ["1 of 50k    ", "wf-rare"],
+      ["2.5k of 50k ", "wf-warm"],
+      ["47k of 50k  ", "wf-bulk"],
+    ] as const) {
+      await timeItAsync(`queryInstances ${label}`, 200, async () => {
+        await storage.queryInstances({ workflowId, page: 1, pageSize: 50 });
+      });
+    }
+
+    // 无过滤条件：退回全量扫描，作为对照
+    await timeItAsync("queryInstances no filter ", 200, async () => {
+      await storage.queryInstances({ page: 1, pageSize: 50 });
+    });
+
+    await storage.close();
   });
 });

@@ -17,6 +17,15 @@ import type {
 } from "./StorageProvider";
 
 /**
+ * 走二级索引的选择度阈值。
+ *
+ * 候选桶超过全量的这个比例时，改走全量扫描：索引路径要为桶里每个 id 再做
+ * 一次 Map.get（随机访问），而全量扫描是顺序遍历。桶越接近全量，前者的
+ * 额外查找开销就越不划算——实测 47k/50k 的桶走索引比全量扫描慢约 1/3。
+ */
+const INDEX_SELECTIVITY_THRESHOLD = 0.5;
+
+/**
  * 内存存储实现
  * 用于开发测试或 Redis 不可用时的降级方案
  */
@@ -42,6 +51,208 @@ export class MemoryStorage implements StorageProvider {
   protected lastCleanedEventIds: string[] = [];
   protected lastCleanedHeartbeatKeys: string[] = [];
   protected lastCleanedInstanceIds: string[] = [];
+
+  /**
+   * 等值过滤字段的二级索引：`字段值 -> id 集合`。
+   *
+   * 此前每次 queryInstances/queryEvents 都是 `Array.from(map.values())`
+   * 全量扫描再链式 filter——要从 10 万条实例里取出某个 workflowId 的第一页
+   * 50 条，得先摸过全部 10 万条。有了索引就只从匹配的集合出发。
+   *
+   * 一致性是这里唯一的风险。为此所有对 `instances`/`events` 的增删都**只**
+   * 允许走 {@link putInstance}/{@link dropInstance}/{@link putEvent}/
+   * {@link dropEvent} 这四个私有入口——不要在别处直接 `this.instances.set(...)`，
+   * 否则索引会静默失配。property-style 测试（对照暴力全扫描）守住这一点。
+   */
+  private instancesByWorkflowId = new Map<string, Set<string>>();
+  private instancesByStatus = new Map<string, Set<string>>();
+  private instancesByParentId = new Map<string, Set<string>>();
+  private eventsByInstanceId = new Map<string, Set<string>>();
+  private eventsByType = new Map<string, Set<string>>();
+
+  /**
+   * 索引的内部规模快照，仅供测试断言"索引是紧的"。
+   *
+   * 查询路径在缩小候选集之后仍会对每条记录做完整过滤，因此**失配的索引
+   * 不会产生错误结果，只会让桶白白变大**。这意味着只看查询结果是测不出
+   * 索引漏摘的——必须直接看索引本身。
+   *
+   * 返回每个索引里的条目总数（各桶大小之和）。索引正确时它应当恰好等于
+   * 拥有该字段的记录条数。
+   */
+  protected indexSizesForTest(): {
+    instancesByWorkflowId: number;
+    instancesByStatus: number;
+    instancesByParentId: number;
+    eventsByInstanceId: number;
+    eventsByType: number;
+  } {
+    const total = (index: Map<string, Set<string>>): number => {
+      let sum = 0;
+      for (const bucket of index.values()) sum += bucket.size;
+      return sum;
+    };
+    return {
+      instancesByWorkflowId: total(this.instancesByWorkflowId),
+      instancesByStatus: total(this.instancesByStatus),
+      instancesByParentId: total(this.instancesByParentId),
+      eventsByInstanceId: total(this.eventsByInstanceId),
+      eventsByType: total(this.eventsByType),
+    };
+  }
+
+  /** 把 id 挂到 `index[value]` 下。value 为空时跳过（该字段未设置）。 */
+  private addToIndex(
+    index: Map<string, Set<string>>,
+    value: string | undefined,
+    id: string,
+  ): void {
+    if (!value) return;
+    const bucket = index.get(value);
+    if (bucket) bucket.add(id);
+    else index.set(value, new Set([id]));
+  }
+
+  /** 从 `index[value]` 摘掉 id，桶空了就连桶一起删，避免无限积累空桶。 */
+  private removeFromIndex(
+    index: Map<string, Set<string>>,
+    value: string | undefined,
+    id: string,
+  ): void {
+    if (!value) return;
+    const bucket = index.get(value);
+    if (!bucket) return;
+    bucket.delete(id);
+    if (bucket.size === 0) index.delete(value);
+  }
+
+  /**
+   * 写入实例并维护索引。**所有** instances 的写入都必须走这里。
+   *
+   * 覆盖写时要先按**旧值**摘除索引再按新值挂入——实例的 status 会变，
+   * 只按新值挂而不摘旧值会让它同时出现在 running 和 completed 两个桶里。
+   */
+  private putInstance(instanceId: string, instance: WorkflowInstance): void {
+    const previous = this.instances.get(instanceId);
+    if (previous) {
+      this.removeFromIndex(
+        this.instancesByWorkflowId,
+        previous.workflowId,
+        instanceId,
+      );
+      this.removeFromIndex(this.instancesByStatus, previous.status, instanceId);
+      this.removeFromIndex(
+        this.instancesByParentId,
+        previous.parentInstanceId,
+        instanceId,
+      );
+    }
+    this.instances.set(instanceId, instance);
+    this.addToIndex(
+      this.instancesByWorkflowId,
+      instance.workflowId,
+      instanceId,
+    );
+    this.addToIndex(this.instancesByStatus, instance.status, instanceId);
+    this.addToIndex(
+      this.instancesByParentId,
+      instance.parentInstanceId,
+      instanceId,
+    );
+  }
+
+  /** 删除实例并维护索引。**所有** instances 的删除都必须走这里。 */
+  private dropInstance(instanceId: string): boolean {
+    const previous = this.instances.get(instanceId);
+    if (!previous) return false;
+    this.removeFromIndex(
+      this.instancesByWorkflowId,
+      previous.workflowId,
+      instanceId,
+    );
+    this.removeFromIndex(this.instancesByStatus, previous.status, instanceId);
+    this.removeFromIndex(
+      this.instancesByParentId,
+      previous.parentInstanceId,
+      instanceId,
+    );
+    return this.instances.delete(instanceId);
+  }
+
+  /** 写入事件并维护索引。见 {@link putInstance}。 */
+  private putEvent(eventId: string, event: EventRecord): void {
+    const previous = this.events.get(eventId);
+    if (previous) {
+      this.removeFromIndex(
+        this.eventsByInstanceId,
+        previous.instanceId,
+        eventId,
+      );
+      this.removeFromIndex(this.eventsByType, previous.eventType, eventId);
+    }
+    this.events.set(eventId, event);
+    this.addToIndex(this.eventsByInstanceId, event.instanceId, eventId);
+    this.addToIndex(this.eventsByType, event.eventType, eventId);
+  }
+
+  /** 删除事件并维护索引。见 {@link dropInstance}。 */
+  private dropEvent(eventId: string): boolean {
+    const previous = this.events.get(eventId);
+    if (!previous) return false;
+    this.removeFromIndex(this.eventsByInstanceId, previous.instanceId, eventId);
+    this.removeFromIndex(this.eventsByType, previous.eventType, eventId);
+    return this.events.delete(eventId);
+  }
+
+  /**
+   * 把索引桶里的 id 换成实际记录，跳过已不存在的。
+   *
+   * 正常情况下索引与主 Map 是一致的（所有增删都走四个 put/drop 入口），
+   * 这里的跳过只是防御性的——万一某条路径绕过了funnel，宁可漏一条也不要
+   * 让 query 抛 undefined。
+   */
+  private *idsToRecords<T>(
+    ids: Iterable<string>,
+    source: Map<string, T>,
+  ): Generator<T> {
+    for (const id of ids) {
+      const record = source.get(id);
+      if (record !== undefined) yield record;
+    }
+  }
+
+  /**
+   * 从若干个候选索引里挑最小的那个桶作为扫描起点。
+   *
+   * 返回 undefined 表示没有可用的等值索引（查询没带这些字段），调用方
+   * 退回全量扫描。返回空数组表示确实没有匹配项，可以直接短路。
+   */
+  private narrowByIndexes(
+    lookups: readonly {
+      index: Map<string, Set<string>>;
+      value: string | undefined;
+    }[],
+    totalRecords: number,
+  ): Set<string> | undefined {
+    let smallest: Set<string> | undefined;
+    for (const { index, value } of lookups) {
+      if (!value) continue;
+      // 桶不存在 == 没有任何匹配，直接给出空集短路后续过滤
+      const bucket = index.get(value) ?? new Set<string>();
+      if (!smallest || bucket.size < smallest.size) smallest = bucket;
+    }
+
+    // 选择度不够高时反而更慢：走索引要对桶里每个 id 再做一次 Map.get，
+    // 而直接遍历主 Map 是顺序访问、没有额外查找。实测 47k/50k 的桶走索引
+    // 比全量扫描慢约 1/3。只有当候选集显著小于全量时才值得走索引。
+    if (
+      smallest &&
+      smallest.size > totalRecords * INDEX_SELECTIVITY_THRESHOLD
+    ) {
+      return undefined;
+    }
+    return smallest;
+  }
 
   async connect(): Promise<void> {
     Logger.info("system", "storage", "Memory storage initialized");
@@ -126,7 +337,7 @@ export class MemoryStorage implements StorageProvider {
     // 深拷贝以避免引用问题，使用自定义序列化避免循环引用
     const normalizedInstance = this.normalizeInstanceDates(instance);
     const cloned = this.deepClone(normalizedInstance);
-    this.instances.set(instance.instanceId, cloned);
+    this.putInstance(instance.instanceId, cloned);
     Logger.debug(
       "system",
       "storage",
@@ -149,7 +360,7 @@ export class MemoryStorage implements StorageProvider {
         ...normalizedInstance,
         version: currentVersion + 1,
       });
-      this.instances.set(instance.instanceId, cloned);
+      this.putInstance(instance.instanceId, cloned);
       Logger.debug(
         "system",
         "storage",
@@ -371,7 +582,7 @@ export class MemoryStorage implements StorageProvider {
   }
 
   async deleteInstance(instanceId: string): Promise<void> {
-    this.instances.delete(instanceId);
+    this.dropInstance(instanceId);
     Logger.debug(
       "system",
       "storage",
@@ -558,7 +769,7 @@ export class MemoryStorage implements StorageProvider {
 
   // Event history methods
   async saveEvent(event: EventRecord): Promise<void> {
-    this.events.set(event.id, this.deepClone(event));
+    this.putEvent(event.id, this.deepClone(event));
     Logger.debug("system", "storage", `Event ${event.id} saved to memory`);
   }
 
@@ -570,20 +781,26 @@ export class MemoryStorage implements StorageProvider {
   async queryEvents(
     params: EventQueryParams,
   ): Promise<{ events: EventRecord[]; total: number }> {
-    let events = Array.from(this.events.values());
+    // 见 queryInstances：先用等值索引缩小候选集，再单遍过滤。
+    const narrowed = this.narrowByIndexes(
+      [
+        { index: this.eventsByInstanceId, value: params.instanceId },
+        { index: this.eventsByType, value: params.eventType },
+      ],
+      this.events.size,
+    );
 
-    // Apply filters
-    if (params.instanceId) {
-      events = events.filter((e) => e.instanceId === params.instanceId);
-    }
-    if (params.eventType) {
-      events = events.filter((e) => e.eventType === params.eventType);
-    }
-    if (params.startTime) {
-      events = events.filter((e) => e.timestamp >= params.startTime!);
-    }
-    if (params.endTime) {
-      events = events.filter((e) => e.timestamp <= params.endTime!);
+    const candidates: Iterable<EventRecord> = narrowed
+      ? this.idsToRecords(narrowed, this.events)
+      : this.events.values();
+
+    let events: EventRecord[] = [];
+    for (const event of candidates) {
+      if (params.instanceId && event.instanceId !== params.instanceId) continue;
+      if (params.eventType && event.eventType !== params.eventType) continue;
+      if (params.startTime && event.timestamp < params.startTime) continue;
+      if (params.endTime && event.timestamp > params.endTime) continue;
+      events.push(event);
     }
 
     // Sort by timestamp
@@ -602,7 +819,7 @@ export class MemoryStorage implements StorageProvider {
   }
 
   async deleteEvent(eventId: string): Promise<void> {
-    this.events.delete(eventId);
+    this.dropEvent(eventId);
     Logger.debug("system", "storage", `Event ${eventId} deleted from memory`);
   }
 
@@ -610,29 +827,38 @@ export class MemoryStorage implements StorageProvider {
   async queryInstances(
     params: InstanceQueryParams,
   ): Promise<{ instances: WorkflowInstance[]; total: number }> {
-    let instances = Array.from(this.instances.values());
+    // 先用等值索引把候选集缩到最小的那个桶，再在桶内做完整过滤。
+    // 没带任何可索引字段时退回全量扫描（语义与此前一致）。
+    const narrowed = this.narrowByIndexes(
+      [
+        { index: this.instancesByWorkflowId, value: params.workflowId },
+        { index: this.instancesByStatus, value: params.status },
+        { index: this.instancesByParentId, value: params.parentInstanceId },
+      ],
+      this.instances.size,
+    );
 
-    // Apply filters
-    if (params.workflowId) {
-      instances = instances.filter((i) => i.workflowId === params.workflowId);
-    }
-    if (params.status) {
-      instances = instances.filter((i) => i.status === params.status);
-    }
-    if (params.startTime) {
-      instances = instances.filter(
-        (i) => this.toEpochMs(i.createdAt) >= params.startTime!,
-      );
-    }
-    if (params.endTime) {
-      instances = instances.filter(
-        (i) => this.toEpochMs(i.createdAt) <= params.endTime!,
-      );
-    }
-    if (params.parentInstanceId) {
-      instances = instances.filter(
-        (i) => i.parentInstanceId === params.parentInstanceId,
-      );
+    const candidates: Iterable<WorkflowInstance> = narrowed
+      ? this.idsToRecords(narrowed, this.instances)
+      : this.instances.values();
+
+    // 单遍过滤：此前是链式 .filter()，每个条件都要再分配一个完整数组。
+    let instances: WorkflowInstance[] = [];
+    for (const instance of candidates) {
+      if (params.workflowId && instance.workflowId !== params.workflowId)
+        continue;
+      if (params.status && instance.status !== params.status) continue;
+      if (
+        params.parentInstanceId &&
+        instance.parentInstanceId !== params.parentInstanceId
+      )
+        continue;
+      if (params.startTime || params.endTime) {
+        const createdAt = this.toEpochMs(instance.createdAt);
+        if (params.startTime && createdAt < params.startTime) continue;
+        if (params.endTime && createdAt > params.endTime) continue;
+      }
+      instances.push(instance);
     }
 
     const total = instances.length;
@@ -720,7 +946,7 @@ export class MemoryStorage implements StorageProvider {
       const isStale = this.toEpochMs(instance.updatedAt) < threshold;
 
       if (isCompleted && isStale) {
-        this.instances.delete(id);
+        this.dropInstance(id);
         this.lastCleanedInstanceIds.push(id);
         cleaned++;
         Logger.debug("system", "cleanup", `Cleaned up stale instance ${id}`);
@@ -774,7 +1000,7 @@ export class MemoryStorage implements StorageProvider {
     this.lastCleanedEventIds = [];
     for (const [id, event] of this.events) {
       if (event.timestamp < cutoffTime) {
-        this.events.delete(id);
+        this.dropEvent(id);
         this.lastCleanedEventIds.push(id);
         deleted++;
       }
