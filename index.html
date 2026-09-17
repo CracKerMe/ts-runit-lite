@@ -1,0 +1,1232 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ts-workflow-engine-lite · 轻量级 TypeScript 工作流引擎</title>
+<meta name="description" content="ts-workflow-engine-lite：为单进程应用而生的轻量级 TypeScript 工作流引擎。DAG 编排、状态机、内置调度器、文件持久化、REST API 与 OpenAPI 文档站，一个进程全部搞定。">
+<meta property="og:title" content="ts-workflow-engine-lite · 轻量级 TypeScript 工作流引擎">
+<meta property="og:description" content="DAG 编排 · 状态机 · 内置调度器 · 文件持久化 · REST API —— 不需要外部服务的工作流运行时。">
+<style>
+:root{
+  --bg:#07090E; --panel:#0D1219; --panel2:#111823; --raise:#151D2A;
+  --line:rgba(141,154,172,.16); --line-strong:rgba(141,154,172,.30);
+  --ink:#E9EFF7; --mut:#93A1B4; --dim:#5C6B7E;
+  --teal:#2DE1C2; --teal-deep:#0F3B36; --violet:#8B7BFF; --amber:#FFB454;
+  --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","PingFang SC","Microsoft YaHei",sans-serif;
+  --r:14px;
+}
+@property --spin{syntax:"<angle>";inherits:false;initial-value:0deg}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg); color:var(--ink); font-family:var(--sans);
+  font-size:16px; line-height:1.65; -webkit-font-smoothing:antialiased;
+  overflow-x:hidden;
+}
+body::before{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0;
+  background:
+    radial-gradient(900px 480px at 78% -6%, rgba(45,225,194,.10), transparent 62%),
+    radial-gradient(760px 520px at 8% 12%, rgba(139,123,255,.09), transparent 60%),
+    radial-gradient(1400px 900px at 50% 118%, rgba(45,225,194,.05), transparent 60%);
+}
+body::after{
+  content:""; position:fixed; inset:0; pointer-events:none; z-index:0; opacity:.5;
+  background-image:radial-gradient(rgba(141,154,172,.13) 1px, transparent 1px);
+  background-size:26px 26px;
+  mask-image:linear-gradient(to bottom, #000 0%, transparent 42%, transparent 70%, #000 100%);
+  -webkit-mask-image:linear-gradient(to bottom, #000 0%, transparent 42%, transparent 70%, #000 100%);
+}
+main,header,footer{position:relative; z-index:1}
+a{color:inherit;text-decoration:none}
+::selection{background:rgba(45,225,194,.28)}
+a:focus-visible,button:focus-visible{outline:2px solid var(--teal);outline-offset:2px;border-radius:6px}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#1C2735;border-radius:99px;border:2px solid var(--bg)}
+::-webkit-scrollbar-thumb:hover{background:#2A3A4F}
+
+/* ---------- ambient layers ---------- */
+.aurora{position:fixed;inset:0;z-index:0;overflow:hidden;pointer-events:none;
+  filter:blur(72px);opacity:.1}
+.aurora i{position:absolute;border-radius:50%;will-change:transform}
+.aurora .b1{width:560px;height:560px;background:rgba(45,225,194,.15);top:-170px;right:-90px;
+  animation:drift1 26s ease-in-out infinite alternate}
+.aurora .b2{width:500px;height:500px;background:rgba(139,123,255,.13);top:22%;left:-180px;
+  animation:drift2 33s ease-in-out infinite alternate}
+.aurora .b3{width:660px;height:660px;background:rgba(56,150,255,.08);bottom:-260px;left:34%;
+  animation:drift3 39s ease-in-out infinite alternate}
+@keyframes drift1{to{transform:translate(-130px,150px) scale(1.18)}}
+@keyframes drift2{to{transform:translate(160px,-110px) scale(1.12)}}
+@keyframes drift3{to{transform:translate(-150px,-130px) scale(1.2)}}
+#bg-canvas{position:fixed;inset:0;z-index:0;pointer-events:none}
+#bg3d-canvas{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:0;transition:opacity 1.4s ease .15s}
+#bg3d-canvas.ready{opacity:1}
+#veil{position:fixed;inset:0;z-index:0;pointer-events:none;
+  background:linear-gradient(180deg,rgba(4,6,10,.64),rgba(3,5,8,.76))}
+#cursor-glow{position:fixed;left:0;top:0;width:520px;height:520px;border-radius:50%;
+  pointer-events:none;z-index:1;opacity:.5;mix-blend-mode:screen;
+  background:radial-gradient(circle,rgba(45,225,194,.09),rgba(139,123,255,.05) 42%,transparent 68%);
+  transform:translate(-50%,-50%)}
+@media(pointer:coarse){#cursor-glow{display:none}}
+
+#progress{position:fixed;top:0;left:0;height:2px;width:0;z-index:80;
+  background:linear-gradient(90deg,var(--teal),#7fe0ff,var(--violet));
+  box-shadow:0 0 12px rgba(45,225,194,.55)}
+
+.wrap{max-width:1160px;margin:0 auto;padding:0 28px}
+
+/* ---------- nav ---------- */
+header{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);
+  background:rgba(7,9,14,.72);border-bottom:1px solid var(--line);
+  transition:background .3s,box-shadow .3s}
+header.scrolled{background:rgba(7,9,14,.88);box-shadow:0 10px 34px rgba(0,0,0,.4)}
+.nav{display:flex;align-items:center;gap:22px;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:650;letter-spacing:-.01em}
+.brand .bolt{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;
+  background:linear-gradient(140deg,var(--teal),#1c9c94);color:#04211d;font-size:15px;
+  box-shadow:0 0 18px rgba(45,225,194,.35);animation:boltPulse 3.2s ease-in-out infinite}
+@keyframes boltPulse{0%,100%{box-shadow:0 0 12px rgba(45,225,194,.25)}50%{box-shadow:0 0 24px rgba(45,225,194,.5)}}
+.ver{font-family:var(--mono);font-size:11px;color:var(--teal);border:1px solid rgba(45,225,194,.35);
+  border-radius:99px;padding:2px 8px;background:rgba(45,225,194,.07)}
+.nav nav{margin-left:auto;display:flex;gap:26px;font-size:14px;color:var(--mut)}
+.nav nav a{position:relative;transition:color .2s}
+.nav nav a::after{content:"";position:absolute;left:0;bottom:-5px;height:1px;width:0;
+  background:linear-gradient(90deg,var(--teal),var(--violet));transition:width .28s ease}
+.nav nav a:hover{color:var(--ink)}
+.nav nav a:hover::after{width:100%}
+.gh{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;font-weight:550;
+  border:1px solid var(--line-strong);border-radius:10px;padding:7px 14px;transition:.2s}
+.gh:hover{border-color:var(--teal);color:var(--teal);box-shadow:0 0 0 3px rgba(45,225,194,.10)}
+@media(max-width:860px){.nav nav{display:none}}
+
+/* ---------- hero ---------- */
+.hero{padding:84px 0 56px;display:grid;grid-template-columns:1.02fr .98fr;gap:56px;align-items:center;
+  perspective:1500px}
+@media(max-width:980px){.hero{grid-template-columns:1fr;padding-top:56px}}
+.eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;color:var(--dim);
+  text-transform:uppercase;margin-bottom:22px;display:flex;align-items:center;gap:10px}
+.eyebrow::before{content:"";width:26px;height:1px;background:linear-gradient(90deg,var(--teal),transparent)}
+.eyebrow::after{content:"";width:5px;height:5px;border-radius:50%;background:var(--teal);
+  box-shadow:0 0 8px var(--teal);animation:blink 1.6s infinite}
+h1{font-size:clamp(34px,5.4vw,62px);line-height:1.12;letter-spacing:-.03em;font-weight:720}
+h1 .glow{color:transparent;
+  background:linear-gradient(92deg,var(--teal) 8%,#7fe0ff 42%,var(--violet) 68%,var(--teal) 96%);
+  background-size:240% 100%;-webkit-background-clip:text;background-clip:text;
+  filter:drop-shadow(0 0 22px rgba(45,225,194,.22));
+  animation:textSheen 8s ease-in-out infinite}
+@keyframes textSheen{0%,100%{background-position:0% 0}50%{background-position:100% 0}}
+.sub{margin-top:22px;color:var(--mut);font-size:17px;max-width:34em}
+.sub code{font-family:var(--mono);font-size:.88em;color:var(--teal);background:rgba(45,225,194,.08);
+  border:1px solid rgba(45,225,194,.2);border-radius:6px;padding:1px 6px}
+.cta{margin-top:32px;display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.install{display:flex;align-items:center;gap:12px;font-family:var(--mono);font-size:14px;
+  background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 14px;
+  transition:border-color .2s,box-shadow .2s}
+.install:hover{border-color:rgba(45,225,194,.4);box-shadow:0 0 24px rgba(45,225,194,.08)}
+.install .dollar{color:var(--dim)}
+.install button{font:inherit;font-size:12px;color:var(--mut);background:var(--raise);
+  border:1px solid var(--line);border-radius:7px;padding:3px 10px;cursor:pointer;transition:.18s}
+.install button:hover{color:var(--teal);border-color:rgba(45,225,194,.45)}
+.btn-main{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14.5px;
+  background:linear-gradient(140deg,var(--teal),#17a99e);color:#03231f;border-radius:12px;padding:11px 20px;
+  transition:.2s;box-shadow:0 6px 24px rgba(45,225,194,.18);position:relative;overflow:hidden}
+.btn-main::after{content:"";position:absolute;top:0;left:-80%;width:46%;height:100%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.5),transparent);
+  transform:skewX(-20deg);animation:btnSheen 4.6s ease-in-out infinite}
+@keyframes btnSheen{0%,55%{left:-80%}78%,100%{left:135%}}
+.btn-main:hover{transform:translateY(-2px);box-shadow:0 12px 34px rgba(45,225,194,.34)}
+.chips{margin-top:30px;display:flex;flex-wrap:wrap;gap:8px}
+.chip{font-family:var(--mono);font-size:12px;color:var(--mut);border:1px solid var(--line);
+  border-radius:99px;padding:5px 12px;background:rgba(17,24,35,.6);transition:.22s}
+.chip:hover{color:var(--teal);border-color:rgba(45,225,194,.4);transform:translateY(-1px)}
+.chip::before{content:"◆";color:var(--teal);margin-right:7px;font-size:9px;vertical-align:1px;
+  animation:chipPulse 2.8s ease-in-out infinite;text-shadow:0 0 6px rgba(45,225,194,.6)}
+.chip:nth-child(2)::before{animation-delay:.35s}
+.chip:nth-child(3)::before{animation-delay:.7s}
+.chip:nth-child(4)::before{animation-delay:1.05s}
+.chip:nth-child(5)::before{animation-delay:1.4s}
+@keyframes chipPulse{0%,100%{opacity:1}50%{opacity:.3}}
+.hint3d{margin-top:18px;font-family:var(--mono);font-size:11px;color:var(--dim);letter-spacing:.1em;
+  display:flex;align-items:center;gap:8px}
+.hint3d i{width:6px;height:6px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);
+  animation:blink 2s infinite;font-style:normal}
+
+/* hero entrance */
+.d1,.d2,.d3,.d4,.d5{animation:heroIn .9s cubic-bezier(.16,.8,.24,1) backwards}
+.d1{animation-delay:.05s}.d2{animation-delay:.17s}.d3{animation-delay:.29s}
+.d4{animation-delay:.41s}.d5{animation-delay:.53s}
+@keyframes heroIn{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:none}}
+
+/* ---------- engine panel (signature) ---------- */
+.engine{background:linear-gradient(180deg,rgba(17,24,35,.78),rgba(13,18,25,.86));border:1px solid var(--line);
+  border-radius:18px;overflow:hidden;box-shadow:0 24px 70px rgba(0,0,0,.5);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  position:relative;transform-style:preserve-3d;will-change:transform;
+  transition:box-shadow .3s}
+.engine:hover{box-shadow:0 30px 90px rgba(0,0,0,.6),0 0 40px rgba(45,225,194,.06)}
+.engine::before{content:"";position:absolute;inset:0;border-radius:18px;padding:1px;
+  background:conic-gradient(from var(--spin),
+    transparent 0deg,transparent 288deg,rgba(45,225,194,.7) 322deg,rgba(139,123,255,.55) 344deg,transparent 360deg);
+  -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  animation:spinGlow 7s linear infinite;pointer-events:none;z-index:3}
+@keyframes spinGlow{to{--spin:360deg}}
+.engine .scan{position:absolute;left:0;right:0;top:-140px;height:140px;z-index:2;pointer-events:none;
+  background:linear-gradient(to bottom,transparent,rgba(45,225,194,.055) 55%,rgba(45,225,194,.09) 98%,transparent);
+  animation:scanMove 6.5s linear infinite}
+@keyframes scanMove{from{top:-140px}to{top:100%}}
+.engine-bar{display:flex;align-items:center;gap:8px;padding:11px 16px;border-bottom:1px solid var(--line);
+  background:rgba(7,9,14,.5);position:relative;z-index:4}
+.dot{width:10px;height:10px;border-radius:50%}
+.engine-bar .title{margin-left:8px;font-family:var(--mono);font-size:11.5px;color:var(--dim);letter-spacing:.06em}
+.engine-bar .live{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--teal);
+  display:flex;align-items:center;gap:6px}
+.engine-bar .live i{width:6px;height:6px;border-radius:50%;background:var(--teal);
+  animation:blink 1.4s infinite;font-style:normal}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+#dag{display:block;width:100%;height:auto}
+.term{border-top:1px solid var(--line);background:#06080C;padding:12px 16px;height:132px;overflow:hidden;
+  font-family:var(--mono);font-size:11.8px;line-height:1.85;position:relative;z-index:4}
+.term div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:slideIn .3s ease}
+@keyframes slideIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.t-time{color:var(--dim)}
+.t-node{color:var(--violet)}
+.t-engine{color:var(--teal)}
+.t-warn{color:var(--amber)}
+.t-dlq{color:#ff7d7d}
+
+/* svg dag */
+.edge{fill:none;stroke:rgba(141,154,172,.32);stroke-width:1.4}
+.edge.dlq-edge{stroke:rgba(255,180,84,.25);stroke-dasharray:4 5}
+.edge.flow{stroke-dasharray:5 7;animation:dashMove .5s linear infinite;
+  filter:drop-shadow(0 0 4px rgba(45,225,194,.4))}
+@keyframes dashMove{to{stroke-dashoffset:-12}}
+.n rect{fill:rgba(18,26,38,.72);stroke:var(--line-strong);stroke-width:1;transition:.3s}
+.n text{fill:var(--mut);font-family:var(--mono);font-size:11px;transition:.3s}
+.n .sub-label{fill:var(--dim);font-size:8.6px}
+.n.is-run rect{fill:rgba(45,225,194,.14);stroke:var(--teal);filter:drop-shadow(0 0 8px rgba(45,225,194,.5))}
+.n.is-run text{fill:var(--teal)}
+.n.is-done rect{fill:rgba(45,225,194,.05);stroke:rgba(45,225,194,.4)}
+.n.is-done text{fill:#a9d8cf}
+.n.is-wait rect{fill:rgba(139,123,255,.13);stroke:var(--violet);stroke-dasharray:5 4;
+  filter:drop-shadow(0 0 8px rgba(139,123,255,.45))}
+.n.is-wait text{fill:var(--violet)}
+.n.is-fail rect{fill:rgba(255,180,84,.12);stroke:var(--amber);filter:drop-shadow(0 0 8px rgba(255,180,84,.5))}
+.n.is-fail text{fill:var(--amber)}
+.n.is-dlq rect{fill:rgba(255,125,125,.1);stroke:#ff7d7d;filter:drop-shadow(0 0 8px rgba(255,125,125,.4))}
+.n.is-dlq text{fill:#ff9d9d}
+
+/* ---------- sections ---------- */
+section{padding:96px 0}
+.sec-head{max-width:44em;margin-bottom:52px}
+.kicker{font-family:var(--mono);font-size:11.5px;letter-spacing:.22em;text-transform:uppercase;
+  color:var(--teal);margin-bottom:14px;
+  display:inline-flex;align-items:center;gap:10px}
+.kicker::before{content:"";width:22px;height:1px;background:linear-gradient(90deg,var(--teal),transparent)}
+h2{font-size:clamp(26px,3.4vw,38px);letter-spacing:-.02em;line-height:1.2;font-weight:680}
+.sec-head p{margin-top:14px;color:var(--mut)}
+
+/* stats */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);border-radius:var(--r);
+  background:rgba(13,18,25,.6);overflow:hidden;position:relative}
+.stats::before{content:"";position:absolute;top:0;left:8%;right:8%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(45,225,194,.5),rgba(139,123,255,.4),transparent)}
+.stat{padding:26px 24px;border-right:1px solid var(--line);transition:background .25s}
+.stat:last-child{border-right:0}
+.stat:hover{background:rgba(45,225,194,.045)}
+.stat b{display:block;font-size:30px;font-weight:700;letter-spacing:-.02em;
+  font-family:var(--mono);
+  background:linear-gradient(180deg,#FFFFFF 8%,var(--teal) 88%);
+  -webkit-background-clip:text;background-clip:text;color:transparent}
+.stat span{font-size:13px;color:var(--mut)}
+@media(max-width:760px){.stats{grid-template-columns:repeat(2,1fr)}
+  .stat{border-bottom:1px solid var(--line)}
+  .stat:nth-child(2n){border-right:0}}
+
+/* bento */
+.bento{display:grid;grid-template-columns:repeat(6,1fr);gap:16px}
+.card{background:linear-gradient(180deg,var(--panel2),var(--panel));border:1px solid var(--line);
+  border-radius:var(--r);padding:26px;position:relative;overflow:hidden;transition:border-color .25s,transform .25s,box-shadow .25s}
+.card:hover{border-color:rgba(45,225,194,.4);transform:translateY(-4px);
+  box-shadow:0 18px 48px rgba(0,0,0,.5),0 0 30px rgba(45,225,194,.05)}
+.card::before{content:"";position:absolute;inset:0;opacity:0;transition:opacity .35s;pointer-events:none;
+  background:radial-gradient(360px circle at var(--mx,50%) var(--my,50%),rgba(45,225,194,.10),rgba(139,123,255,.05) 45%,transparent 68%)}
+.card:hover::before{opacity:1}
+.card .ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;font-size:17px;
+  background:var(--raise);border:1px solid var(--line);margin-bottom:16px;transition:.3s}
+.card:hover .ic{border-color:rgba(45,225,194,.45);box-shadow:0 0 16px rgba(45,225,194,.18);transform:translateY(-2px)}
+.card h3{font-size:16.5px;font-weight:640;letter-spacing:-.01em;margin-bottom:8px}
+.card p{font-size:13.8px;color:var(--mut);line-height:1.7}
+.card p code{font-family:var(--mono);font-size:.9em;color:var(--teal)}
+.w4{grid-column:span 4}.w3{grid-column:span 3}.w2{grid-column:span 2}
+@media(max-width:900px){.bento{grid-template-columns:1fr 1fr}.w4,.w3,.w2{grid-column:span 1}}
+@media(max-width:560px){.bento{grid-template-columns:1fr}}
+
+/* lifecycle */
+.track{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;position:relative;margin-top:8px}
+.stage{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:20px 16px;
+  cursor:pointer;transition:.3s;position:relative}
+.stage .idx{font-family:var(--mono);font-size:10.5px;color:var(--dim);letter-spacing:.14em}
+.stage h4{font-size:15px;margin:8px 0 6px;font-weight:620}
+.stage p{font-size:12.6px;color:var(--mut);line-height:1.6}
+.stage .bar{position:absolute;left:16px;right:16px;bottom:0;height:2px;border-radius:2px;
+  background:transparent;transition:.3s}
+.stage.on{border-color:var(--teal);background:linear-gradient(180deg,rgba(45,225,194,.09),var(--panel));
+  box-shadow:0 0 0 3px rgba(45,225,194,.08),0 14px 36px rgba(0,0,0,.4);transform:translateY(-4px)}
+.stage.on .idx{color:var(--teal)}
+.stage.on .bar{background:var(--teal);box-shadow:0 0 10px var(--teal);animation:grow 2.4s linear}
+.stage.alt.on{border-color:var(--amber);
+  background:linear-gradient(180deg,rgba(255,180,84,.08),var(--panel));
+  box-shadow:0 0 0 3px rgba(255,180,84,.08),0 14px 36px rgba(0,0,0,.4)}
+.stage.alt.on .idx,.stage.alt.on+.stage .idx{color:var(--amber)}
+.stage.alt.on .bar{background:var(--amber);box-shadow:0 0 10px var(--amber)}
+@keyframes grow{from{left:16px;right:calc(100% - 16px)}to{left:16px;right:16px}}
+@media(max-width:900px){.track{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.track{grid-template-columns:1fr}}
+
+/* code */
+.code-shell{border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--panel);
+  box-shadow:0 24px 70px rgba(0,0,0,.45);position:relative}
+.code-shell::before{content:"";position:absolute;top:0;left:10%;right:10%;height:1px;z-index:1;
+  background:linear-gradient(90deg,transparent,rgba(139,123,255,.5),rgba(45,225,194,.5),transparent)}
+.tabs{display:flex;gap:2px;padding:10px 12px 0;border-bottom:1px solid var(--line);background:#0A0F16;
+  overflow-x:auto}
+.tab{font-family:var(--mono);font-size:12.5px;color:var(--dim);padding:9px 16px;border-radius:9px 9px 0 0;
+  cursor:pointer;white-space:nowrap;transition:.2s;border-bottom:2px solid transparent}
+.tab:hover{color:var(--mut)}
+.tab.on{color:var(--teal);background:rgba(45,225,194,.06);border-bottom-color:var(--teal)}
+pre{padding:24px 26px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.8;color:#c7d3e2}
+pre .cm{color:var(--dim)}
+pre .kw{color:var(--violet)}
+pre .st{color:#8fe3a8}
+pre .fn{color:#7fd7ff}
+pre .nu{color:var(--amber)}
+pre .pn{color:var(--teal)}
+.pane{display:none}.pane.on{display:block;animation:slideIn .28s ease}
+
+/* examples */
+.ex-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:900px){.ex-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:600px){.ex-grid{grid-template-columns:1fr}}
+.ex{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;transition:.22s;position:relative;overflow:hidden}
+.ex::after{content:"";position:absolute;left:0;top:0;bottom:0;width:2px;
+  background:linear-gradient(180deg,var(--violet),transparent);opacity:0;transition:.25s}
+.ex:hover{border-color:rgba(139,123,255,.45);background:var(--panel2);transform:translateY(-2px);
+  box-shadow:0 14px 36px rgba(0,0,0,.4)}
+.ex:hover::after{opacity:1}
+.ex .cmd{font-family:var(--mono);font-size:12px;color:var(--violet);margin-bottom:8px}
+.ex .cmd::before{content:"$ ";color:var(--dim)}
+.ex h4{font-size:14.5px;font-weight:600;margin-bottom:5px}
+.ex p{font-size:12.8px;color:var(--mut)}
+
+/* cta band */
+.band{border:1px solid var(--line);border-radius:20px;padding:56px 48px;text-align:center;
+  background:linear-gradient(140deg,rgba(45,225,194,.08),rgba(139,123,255,.07) 60%,transparent),
+    var(--panel);position:relative;overflow:hidden}
+.band::before{content:"";position:absolute;top:-45%;left:50%;transform:translateX(-50%);
+  width:72%;height:85%;pointer-events:none;
+  background:radial-gradient(closest-side,rgba(45,225,194,.13),transparent)}
+.band h2{margin-bottom:14px;position:relative}
+.band p{color:var(--mut);max-width:40em;margin:0 auto 28px;position:relative}
+.band .cta{justify-content:center;position:relative}
+
+/* footer */
+footer{border-top:1px solid var(--line);padding:36px 0;margin-top:40px}
+.foot{display:flex;flex-wrap:wrap;gap:18px;align-items:center;color:var(--dim);font-size:13px}
+.foot a{color:var(--mut);transition:color .2s}.foot a:hover{color:var(--teal)}
+.foot .sp{margin-left:auto}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(22px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
+@media(prefers-reduced-motion:reduce){
+  .rv{opacity:1;transform:none;transition:none}
+  .d1,.d2,.d3,.d4,.d5{animation:none;opacity:1}
+  #cursor-glow{display:none}
+  *{animation-duration:.001s!important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<div id="progress" aria-hidden="true"></div>
+<div class="aurora" aria-hidden="true"><i class="b1"></i><i class="b2"></i><i class="b3"></i></div>
+<canvas id="bg-canvas" aria-hidden="true"></canvas>
+<canvas id="bg3d-canvas" aria-hidden="true"></canvas>
+<div id="cursor-glow" aria-hidden="true"></div>
+
+<header>
+  <div class="wrap nav">
+    <a class="brand" href="#"><span class="bolt">⚡</span>ts-workflow-engine-lite</a>
+    <span class="ver">v3.0.2</span>
+    <nav>
+      <a href="#features">核心能力</a>
+      <a href="#lifecycle">生命周期</a>
+      <a href="#code">代码示例</a>
+      <a href="#examples">示例集</a>
+      <a href="https://github.com/CracKerMe/ts-runit-lite#readme" target="_blank" rel="noopener">在线文档</a>
+    </nav>
+    <a class="gh" href="https://github.com/CracKerMe/ts-runit-lite" target="_blank" rel="noopener">
+      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+      GitHub
+    </a>
+  </div>
+</header>
+
+<main>
+<div class="wrap">
+
+  <!-- HERO -->
+  <section class="hero" style="padding-bottom:24px">
+    <div>
+      <div class="eyebrow d1">Workflow Engine · TypeScript · MIT</div>
+      <h1 class="d2">为单进程而生的<br><span class="glow">轻量级工作流引擎</span></h1>
+      <p class="sub d3">
+        <code>ts-workflow-engine-lite</code> 把 DAG 编排、状态机、调度器、持久化与 REST API 装进同一个进程 ——
+        不需要 Kafka，不需要外部数据库，<code>pnpm add</code> 即得完整的工作流运行时。
+      </p>
+      <div class="cta d4">
+        <div class="install">
+          <span class="dollar">$</span>
+          <span id="install-cmd">pnpm add ts-workflow-engine-lite</span>
+          <button id="copy-btn" type="button">复制</button>
+        </div>
+        <a class="btn-main" href="https://github.com/CracKerMe/ts-runit-lite" target="_blank" rel="noopener">查看源码 →</a>
+      </div>
+      <div class="chips d5">
+        <span class="chip">零外部服务</span>
+        <span class="chip">文件持久化</span>
+        <span class="chip">内置 Cron 调度</span>
+        <span class="chip">OpenAPI 文档站</span>
+        <span class="chip">Headless 可嵌入</span>
+      </div>
+      <div class="hint3d d5" style="animation-delay:.62s"><i></i>拖动页面空白处 · 旋转 3D 星域</div>
+    </div>
+
+    <!-- signature: live engine -->
+    <div class="engine d3" aria-label="工作流执行动画演示">
+      <div class="scan" aria-hidden="true"></div>
+      <div class="engine-bar">
+        <span class="dot" style="background:#ff5f57"></span>
+        <span class="dot" style="background:#febc2e"></span>
+        <span class="dot" style="background:#28c840"></span>
+        <span class="title">engine · order-flow.dag</span>
+        <span class="live"><i></i>LIVE</span>
+      </div>
+      <svg id="dag" viewBox="0 0 520 316" role="img" aria-label="DAG 工作流执行示意">
+        <defs>
+          <marker id="ah" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+            <path d="M0,0 L7,3.5 L0,7" fill="none" stroke="rgba(141,154,172,.6)" stroke-width="1"/>
+          </marker>
+        </defs>
+        <!-- edges -->
+        <path id="e-hook-val"  class="edge" d="M120 78 H 152"  marker-end="url(#ah)"/>
+        <path id="e-val-fan"   class="edge" d="M252 78 H 284"  marker-end="url(#ah)"/>
+        <path id="e-fan-a"     class="edge" d="M384 78 C 412 78, 404 42, 432 42" marker-end="url(#ah)"/>
+        <path id="e-fan-b"     class="edge" d="M384 78 C 412 78, 404 118, 432 118" marker-end="url(#ah)"/>
+        <path id="e-a-merge"   class="edge" d="M492 56 V 92 C 492 108, 480 112, 464 116" marker-end="url(#ah)"/>
+        <path id="e-b-merge"   class="edge" d="M492 132 V 152 C 492 176, 470 182, 452 190" marker-end="url(#ah)"/>
+        <path id="e-merge-appr" class="edge" d="M368 208 H 300" marker-end="url(#ah)"/>
+        <path id="e-appr-done" class="edge" d="M196 208 H 152" marker-end="url(#ah)"/>
+        <path id="e-appr-dlq"  class="edge dlq-edge" d="M248 228 V 272 H 200" marker-end="url(#ah)"/>
+
+        <!-- nodes -->
+        <g id="n-hook" class="n"><rect x="20" y="58" width="100" height="40" rx="9"/>
+          <text x="70" y="75" text-anchor="middle">webhook</text>
+          <text x="70" y="88" text-anchor="middle" class="sub-label">POST /instances</text></g>
+        <g id="n-val" class="n"><rect x="152" y="58" width="100" height="40" rx="9"/>
+          <text x="202" y="75" text-anchor="middle">validate</text>
+          <text x="202" y="88" text-anchor="middle" class="sub-label">action</text></g>
+        <g id="n-fan" class="n"><rect x="284" y="58" width="100" height="40" rx="9"/>
+          <text x="334" y="75" text-anchor="middle">fan-out</text>
+          <text x="334" y="88" text-anchor="middle" class="sub-label">parallel</text></g>
+        <g id="n-llm" class="n"><rect x="432" y="26" width="84" height="34" rx="9"/>
+          <text x="474" y="47" text-anchor="middle">llm-tag</text></g>
+        <g id="n-tf" class="n"><rect x="432" y="102" width="84" height="34" rx="9"/>
+          <text x="474" y="123" text-anchor="middle">transform</text></g>
+        <g id="n-merge" class="n"><rect x="368" y="188" width="100" height="40" rx="9"/>
+          <text x="418" y="205" text-anchor="middle">merge</text>
+          <text x="418" y="218" text-anchor="middle" class="sub-label">${...} 注入</text></g>
+        <g id="n-appr" class="n"><rect x="196" y="188" width="104" height="40" rx="9"/>
+          <text x="248" y="205" text-anchor="middle">approval</text>
+          <text x="248" y="218" text-anchor="middle" class="sub-label">durable timer</text></g>
+        <g id="n-done" class="n"><rect x="32" y="188" width="104" height="40" rx="9"/>
+          <text x="84" y="205" text-anchor="middle">completed</text>
+          <text x="84" y="218" text-anchor="middle" class="sub-label">persisted</text></g>
+        <g id="n-dlq" class="n"><rect x="100" y="256" width="100" height="38" rx="9"/>
+          <text x="150" y="279" text-anchor="middle">dead-letter</text></g>
+      </svg>
+      <div class="term" id="term" aria-live="off"></div>
+    </div>
+  </section>
+
+  <!-- STATS -->
+  <section style="padding-top:40px;padding-bottom:40px">
+    <div class="stats rv">
+      <div class="stat"><b>3.0.1</b><span>当前版本，持续演进</span></div>
+      <div class="stat"><b><em class="cnt" data-count="18">0</em>+</b><span>官方示例，覆盖真实场景</span></div>
+      <div class="stat"><b>0</b><span>外部服务依赖</span></div>
+      <div class="stat"><b>MIT</b><span>开源协议，放心使用</span></div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section id="features">
+    <div class="sec-head rv">
+      <div class="kicker">Core Capabilities</div>
+      <h2>一个进程，装下完整的工作流运行时</h2>
+      <p>编排、调度、持久化、控制面 —— 全部内置。不用为了跑通一条流程去拼装半个基础设施。</p>
+    </div>
+    <div class="bento">
+      <div class="card w4 rv">
+        <div class="ic">🤖</div>
+        <h3>AI Workflow</h3>
+        <p>把 LLM 调用当作普通节点编排进 DAG：提示词拼装、上游输出注入、失败重试与超时兜底都由引擎接管，
+           你的 AI 流程和业务流程共用同一套状态机与持久化。</p>
+      </div>
+      <div class="card w2 rv">
+        <div class="ic">⏱️</div>
+        <h3>内置调度器</h3>
+        <p>Cron 定时启动工作流，数据同步、报表生成等周期任务开箱即用。</p>
+      </div>
+      <div class="card w2 rv">
+        <div class="ic">🌐</div>
+        <h3>REST API + OpenAPI</h3>
+        <p>内置 HTTP 控制面与分页文档站，启动、重试、跳过、补偿随时可查可控。</p>
+      </div>
+      <div class="card w2 rv">
+        <div class="ic">💾</div>
+        <h3>文件持久化</h3>
+        <p>实例状态落本地文件，单进程应用无需引入数据库，重启即恢复。</p>
+      </div>
+      <div class="card w2 rv">
+        <div class="ic">🔀</div>
+        <h3>DAG &amp; 状态机</h3>
+        <p>声明式定义节点与边：条件分支、并行扇出、汇聚合并，类型全程可推导。</p>
+      </div>
+      <div class="card w3 rv">
+        <div class="ic">🛟</div>
+        <h3>失败治理：重试 / 补偿 / 回滚 / DLQ</h3>
+        <p>节点失败自动重试，失败实例走回滚或补偿路径；多次失败进入死信队列等待人工介入，
+           实例控制 API 让每个环节都可被程序化处理。</p>
+      </div>
+      <div class="card w3 rv">
+        <div class="ic">📡</div>
+        <h3>事件驱动 &amp; Durable Timer</h3>
+        <p>工作流可以停下来等待外部事件（审批、回调、Webhook），支持超时分支与持久化计时器 ——
+           进程重启后等待中的实例原地恢复，不丢上下文。</p>
+      </div>
+      <div class="card w3 rv">
+        <div class="ic">🧩</div>
+        <h3><code style="font-family:var(--mono);font-size:.92em">${...}</code> 输出注入</h3>
+        <p>在节点参数里直接引用上游输出，数据在 DAG 中自然流动，不必手写状态搬运代码。</p>
+      </div>
+      <div class="card w3 rv">
+        <div class="ic">🪶</div>
+        <h3>Headless / 可嵌入</h3>
+        <p>不装 Express 也能作为纯引擎使用；也可嵌入已有 Express 应用，把工作流能力挂到你现有的服务里。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- LIFECYCLE -->
+  <section id="lifecycle">
+    <div class="sec-head rv">
+      <div class="kicker">Instance Lifecycle</div>
+      <h2>一个实例的一生，全程可观测</h2>
+      <p>从注册到终态，每个阶段都有明确的状态与对应的控制 API。点击任一阶段查看，演示会自动推进。</p>
+    </div>
+    <div class="track" id="track">
+      <div class="stage" data-i="0"><div class="idx">01 / REGISTER</div><h4>注册</h4>
+        <p>engine.register(workflow) 声明节点与边</p><div class="bar"></div></div>
+      <div class="stage" data-i="1"><div class="idx">02 / START</div><h4>启动</h4>
+        <p>engine.start(id, ctx) 创建实例并持久化</p><div class="bar"></div></div>
+      <div class="stage" data-i="2"><div class="idx">03 / RUNNING</div><h4>执行</h4>
+        <p>节点按 DAG 依序推进，输出逐节点落盘</p><div class="bar"></div></div>
+      <div class="stage" data-i="3"><div class="idx">04 / WAITING</div><h4>等待</h4>
+        <p>挂起等待事件或 Durable Timer，可跨重启</p><div class="bar"></div></div>
+      <div class="stage alt" data-i="4"><div class="idx">05 / RETRY</div><h4>重试 · 补偿</h4>
+        <p>失败自动重试，仍失败则回滚或走补偿路径</p><div class="bar"></div></div>
+      <div class="stage alt" data-i="5"><div class="idx">06 / DLQ</div><h4>终态</h4>
+        <p>completed，或进入死信队列等待人工处理</p><div class="bar"></div></div>
+    </div>
+  </section>
+
+  <!-- CODE -->
+  <section id="code">
+    <div class="sec-head rv">
+      <div class="kicker">Three Lines to Production</div>
+      <h2>定义、注册、启动 —— 就这么直接</h2>
+      <p>API 贴近 TypeScript 的表达习惯：节点是函数，边是声明，状态由引擎负责。</p>
+    </div>
+    <div class="code-shell rv">
+      <div class="tabs" role="tablist">
+        <div class="tab on" data-pane="p1" role="tab">01 定义工作流</div>
+        <div class="tab" data-pane="p2" role="tab">02 引导与运行</div>
+        <div class="tab" data-pane="p3" role="tab">03 REST API</div>
+      </div>
+      <div class="pane on" id="p1"><pre><span class="kw">import</span> { defineWorkflow } <span class="kw">from</span> <span class="st">"ts-workflow-engine-lite"</span>;
+
+<span class="kw">const</span> hello = <span class="fn">defineWorkflow</span>({
+  id: <span class="st">"hello"</span>,
+  name: <span class="st">"Hello workflow"</span>,
+  startNode: <span class="st">"greet"</span>,
+  nodes: {
+    greet: {
+      type: <span class="st">"action"</span>,
+      action: <span class="kw">async</span> (instance) =&gt; ({
+        message: <span class="st">`Hello, ${instance?.context?.name ?? "world"}!`</span>,
+      }),
+      next: [],
+    },
+  },
+});</pre></div>
+      <div class="pane" id="p2"><pre><span class="kw">import</span> { bootstrap, destroyContainer } <span class="kw">from</span> <span class="st">"ts-workflow-engine-lite"</span>;
+
+<span class="kw">const</span> { engine, container } = <span class="kw">await</span> <span class="fn">bootstrap</span>({
+  skipGracefulShutdown: <span class="kw">true</span>,
+  logLevel: <span class="st">"WARN"</span>,
+});
+
+<span class="kw">try</span> {
+  <span class="kw">await</span> engine.<span class="fn">register</span>(hello);
+  <span class="kw">const</span> instanceId = <span class="kw">await</span> engine.<span class="fn">start</span>(<span class="st">"hello"</span>, { name: <span class="st">"Ada"</span> });
+  <span class="kw">const</span> instance = <span class="kw">await</span> engine.<span class="fn">waitForCompletion</span>(instanceId);
+
+  console.<span class="fn">log</span>(instance.status);                <span class="cm">// completed</span>
+  console.<span class="fn">log</span>(instance.state?.nodes?.greet?.output);
+} <span class="kw">finally</span> {
+  engine.<span class="fn">destroy</span>();
+  <span class="kw">await</span> <span class="fn">destroyContainer</span>(container);
+}</pre></div>
+      <div class="pane" id="p3"><pre><span class="cm"># 启动一个实例</span>
+<span class="pn">POST</span> /api/workflows/hello/instances
+{ <span class="st">"context"</span>: { <span class="st">"name"</span>: <span class="st">"Ada"</span> } }
+
+<span class="cm"># 查看实例状态（节点输出、等待原因、重试计数）</span>
+<span class="pn">GET</span> /api/instances/:id
+
+<span class="cm"># 实例控制：重试失败节点 / 跳过 / 触发补偿</span>
+<span class="pn">POST</span> /api/instances/:id/retry
+<span class="pn">POST</span> /api/instances/:id/skip
+<span class="pn">POST</span> /api/instances/:id/compensate
+
+<span class="cm"># 内置 OpenAPI 文档站 —— 交互式浏览全部端点</span>
+<span class="pn">GET</span> /docs</pre></div>
+    </div>
+  </section>
+
+  <!-- EXAMPLES -->
+  <section id="examples">
+    <div class="sec-head rv">
+      <div class="kicker">Examples</div>
+      <h2>18+ 官方示例，直接跑</h2>
+      <p>克隆仓库后一条命令即可运行，从快速上手到多租户、工作池、HTTP 编排一应俱全。</p>
+    </div>
+    <div class="ex-grid">
+      <div class="ex rv"><div class="cmd">pnpm example quickstart</div><h4>快速上手</h4><p>最小闭环：定义、注册、启动、等待完成</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example approval-pipeline</div><h4>审批流水线</h4><p>事件等待 + 审批分支 + 超时兜底</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example cron-data-sync</div><h4>定时数据同步</h4><p>内置 Cron 调度器驱动的周期任务</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example data-processing</div><h4>CSV 数据管道</h4><p>导入、清洗、校验的多阶段处理链</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example event-timeout-workflow</div><h4>事件与超时</h4><p>等待事件、超时分支与回滚路径</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example instance-control-api</div><h4>实例控制 API</h4><p>重试 / 跳过 / 补偿的编程式控制</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example output-injection</div><h4>输出注入</h4><p>用 ${...} 引用上游节点输出</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example headless-no-express</div><h4>Headless 引擎</h4><p>不安装 Express 的纯引擎运行方式</p></div>
+      <div class="ex rv"><div class="cmd">pnpm example parallel-fan-out</div><h4>并行扇出</h4><p>并行分支执行与结果汇聚</p></div>
+    </div>
+  </section>
+
+  <!-- BAND -->
+  <section>
+    <div class="band rv">
+      <div class="kicker" style="margin-bottom:16px">Get Started</div>
+      <h2>把工作流能力装进你的下一个应用</h2>
+      <p>一条命令安装，几十行代码跑通完整流程。MIT 协议，源码与文档全部开放。</p>
+      <div class="cta">
+        <div class="install">
+          <span class="dollar">$</span>
+          <span>pnpm add ts-workflow-engine-lite</span>
+          <button class="copy2" type="button">复制</button>
+        </div>
+        <a class="btn-main" href="https://github.com/CracKerMe/ts-runit-lite#readme" target="_blank" rel="noopener">阅读文档 →</a>
+      </div>
+    </div>
+  </section>
+
+</div>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span class="brand" style="font-size:14px"><span class="bolt" style="width:22px;height:22px;font-size:12px">⚡</span>ts-workflow-engine-lite</span>
+    <span>MIT License · by Sario</span>
+    <span class="sp"></span>
+    <a href="https://github.com/CracKerMe/ts-runit-lite" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://www.npmjs.com/package/ts-workflow-engine-lite" target="_blank" rel="noopener">npm</a>
+    <a href="https://github.com/CracKerMe/ts-runit-lite/blob/main/docs/NODE_REFERENCE.md" target="_blank" rel="noopener">节点参考文档</a>
+  </div>
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- ambient: 2D particle fallback (activates only when 3D scene unavailable) ---------- */
+  window.__sceneFallback2D = function () {
+    if (window.__fallback2D) return;
+    window.__fallback2D = true;
+    var cv = document.getElementById("bg-canvas");
+    if (!(cv && cv.getContext)) return;
+    var ctx = cv.getContext("2d");
+    var W = 0, H = 0;
+    var DPR = Math.min(2, window.devicePixelRatio || 1);
+    var ps = [], mx = -1e4, my = -1e4;
+    var LINK = 115, LINK2 = LINK * LINK;
+
+    function seed() {
+      var n = Math.min(90, Math.round(W * H / 24000));
+      ps = [];
+      for (var i = 0; i < n; i++) {
+        var roll = Math.random();
+        var col = roll < .68 ? "45,225,194" : roll < .88 ? "139,123,255" : "127,224,255";
+        ps.push({
+          x: Math.random() * W, y: Math.random() * H,
+          vx: (Math.random() - .5) * .32, vy: (Math.random() - .5) * .32,
+          r: .8 + Math.random() * 1.5, a: .10 + Math.random() * .26,
+          c: col, pf: .35 + Math.random() * .65, sx: 0, sy: 0
+        });
+      }
+    }
+    function sizeCanvas() {
+      W = window.innerWidth; H = window.innerHeight;
+      cv.width = W * DPR; cv.height = H * DPR;
+      cv.style.width = W + "px"; cv.style.height = H + "px";
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+      seed();
+    }
+    function draw() {
+      ctx.clearRect(0, 0, W, H);
+      var i, j, p, q, dx, dy, d2, linkA;
+      var ox = mx >= 0 ? (mx - W / 2) * .014 : 0;
+      var oy = my >= 0 ? (my - H / 2) * .014 : 0;
+      for (i = 0; i < ps.length; i++) {
+        p = ps[i];
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20;
+        p.sx = p.x + ox * p.pf;
+        p.sy = p.y + oy * p.pf;
+      }
+      ctx.lineWidth = 1;
+      for (i = 0; i < ps.length; i++) {
+        p = ps[i];
+        for (j = i + 1; j < ps.length; j++) {
+          q = ps[j];
+          dx = p.sx - q.sx; dy = p.sy - q.sy; d2 = dx * dx + dy * dy;
+          if (d2 < LINK2) {
+            linkA = (1 - Math.sqrt(d2) / LINK) * .13;
+            ctx.strokeStyle = "rgba(140,175,195," + linkA.toFixed(3) + ")";
+            ctx.beginPath(); ctx.moveTo(p.sx, p.sy); ctx.lineTo(q.sx, q.sy); ctx.stroke();
+          }
+        }
+      }
+      for (i = 0; i < ps.length; i++) {
+        p = ps[i];
+        ctx.fillStyle = "rgba(" + p.c + "," + p.a.toFixed(3) + ")";
+        ctx.beginPath(); ctx.arc(p.sx, p.sy, p.r, 0, 6.2832); ctx.fill();
+      }
+    }
+    var frameReq = null;
+    function tick() { draw(); frameReq = requestAnimationFrame(tick); }
+    sizeCanvas();
+    window.addEventListener("resize", sizeCanvas);
+    if (reduced) { draw(); }
+    else {
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) { if (frameReq) { cancelAnimationFrame(frameReq); frameReq = null; } }
+        else if (!frameReq) { frameReq = requestAnimationFrame(tick); }
+      });
+      window.addEventListener("pointermove", function (e) { mx = e.clientX; my = e.clientY; }, { passive: true });
+      frameReq = requestAnimationFrame(tick);
+    }
+  };
+  if (reduced) { window.__sceneFallback2D(); }
+  else {
+    setTimeout(function () {
+      if (!window.__scene3DReady) window.__sceneFallback2D();
+    }, 4000);
+  }
+
+  /* ---------- ambient: cursor glow ---------- */
+  var glow = document.getElementById("cursor-glow");
+  if (glow) {
+    if (!reduced && window.matchMedia("(pointer:fine)").matches) {
+      window.addEventListener("pointermove", function (e) {
+        glow.style.transform = "translate(" + e.clientX + "px," + e.clientY + "px) translate(-50%,-50%)";
+      }, { passive: true });
+    } else {
+      glow.style.display = "none";
+    }
+  }
+
+  /* ---------- scroll: progress + header state + background dimming ---------- */
+  var hdr = document.querySelector("header");
+  var prog = document.getElementById("progress");
+  var bg3d = document.getElementById("bg3d-canvas");
+  var bg2d = document.getElementById("bg-canvas");
+  var bgTuned = false;
+  var scrTick = false;
+  function onScroll() {
+    if (scrTick) return;
+    scrTick = true;
+    requestAnimationFrame(function () {
+      var y = window.scrollY || 0;
+      if (hdr) hdr.classList.toggle("scrolled", y > 8);
+      if (prog) {
+        var h = document.documentElement.scrollHeight - window.innerHeight;
+        prog.style.width = (h > 0 ? (y / h) * 100 : 0) + "%";
+      }
+      if (!reduced && y > 0) {
+        /* background layers opacity: 1 at top -> 0.4 after ~1.15 viewport heights
+           (applies to both the 3D starfield and the 2D fallback so behavior stays identical) */
+        if (!bgTuned) {
+          var tr = "opacity .12s linear";
+          if (bg3d) bg3d.style.transition = tr;
+          if (bg2d) bg2d.style.transition = tr;
+          bgTuned = true;
+        }
+        var k = Math.min(1, y / (window.innerHeight * 1.15));
+        var o = (1 - 0.6 * k).toFixed(3);
+        if (bg3d) bg3d.style.opacity = o;
+        if (bg2d) bg2d.style.opacity = o;
+      }
+      scrTick = false;
+    });
+  }
+  window.addEventListener("scroll", onScroll, { passive: true });
+  onScroll();
+
+  /* ---------- engine panel: 3D tilt ---------- */
+  var engine = document.querySelector(".engine");
+  if (engine && !reduced && window.matchMedia("(pointer:fine)").matches) {
+    var tRX = 0, tRY = 0, tiltRaf = null;
+    if (engine.parentElement) engine.parentElement.style.perspective = "1500px";
+    engine.style.transition = "transform .18s ease-out";
+    engine.addEventListener("pointermove", function (e) {
+      var r = engine.getBoundingClientRect();
+      tRY = ((e.clientX - r.left) / r.width - .5) * 5;
+      tRX = -(((e.clientY - r.top) / r.height) - .5) * 6;
+      if (!tiltRaf) tiltRaf = requestAnimationFrame(function () {
+        engine.style.transform = "rotateY(" + tRY.toFixed(2) + "deg) rotateX(" + tRX.toFixed(2) + "deg)";
+        tiltRaf = null;
+      });
+    });
+    engine.addEventListener("pointerleave", function () { engine.style.transform = ""; });
+  }
+
+  /* ---------- bento cards: spotlight follow ---------- */
+  document.addEventListener("pointermove", function (e) {
+    var t = e.target;
+    var card = t && t.closest ? t.closest(".card") : null;
+    if (!card) return;
+    var r = card.getBoundingClientRect();
+    card.style.setProperty("--mx", (e.clientX - r.left) + "px");
+    card.style.setProperty("--my", (e.clientY - r.top) + "px");
+  }, { passive: true });
+
+  /* ---------- copy buttons ---------- */
+  function bindCopy(btn, text) {
+    if (!btn) return;
+    btn.addEventListener("click", function () {
+      var done = function () { btn.textContent = "已复制"; setTimeout(function () { btn.textContent = "复制"; }, 1600); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, done);
+      } else {
+        var ta = document.createElement("textarea");
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        try { document.execCommand("copy"); } catch (e) {}
+        document.body.removeChild(ta); done();
+      }
+    });
+  }
+  bindCopy(document.getElementById("copy-btn"), "pnpm add ts-workflow-engine-lite");
+  var c2 = document.querySelector(".copy2");
+  bindCopy(c2, "pnpm add ts-workflow-engine-lite");
+
+  /* ---------- reveal on scroll ---------- */
+  var rvs = document.querySelectorAll(".rv");
+  if ("IntersectionObserver" in window && !reduced) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) { en.target.classList.add("in"); io.unobserve(en.target); }
+      });
+    }, { threshold: 0.12 });
+    rvs.forEach(function (el) { io.observe(el); });
+  } else {
+    rvs.forEach(function (el) { el.classList.add("in"); });
+  }
+
+  /* ---------- stat counter ---------- */
+  var counters = document.querySelectorAll(".cnt");
+  if (counters.length) {
+    var runCnt = function (el) {
+      var target = parseInt(el.getAttribute("data-count"), 10) || 0;
+      if (reduced) { el.textContent = target; return; }
+      var t0 = null, dur = 1500;
+      (function frame(t) {
+        if (!t0) t0 = t;
+        var k = Math.min(1, (t - t0) / dur);
+        var e = 1 - Math.pow(1 - k, 3);
+        el.textContent = Math.round(target * e);
+        if (k < 1) requestAnimationFrame(frame);
+      })(performance.now());
+    };
+    if ("IntersectionObserver" in window) {
+      var cio = new IntersectionObserver(function (es) {
+        es.forEach(function (en) {
+          if (en.isIntersecting) { runCnt(en.target); cio.unobserve(en.target); }
+        });
+      }, { threshold: .5 });
+      counters.forEach(function (el) { cio.observe(el); });
+    } else {
+      counters.forEach(runCnt);
+    }
+  }
+
+  /* ---------- code tabs ---------- */
+  var tabs = document.querySelectorAll(".tab");
+  tabs.forEach(function (tab) {
+    tab.addEventListener("click", function () {
+      tabs.forEach(function (t) { t.classList.remove("on"); });
+      document.querySelectorAll(".pane").forEach(function (p) { p.classList.remove("on"); });
+      tab.classList.add("on");
+      var pane = document.getElementById(tab.getAttribute("data-pane"));
+      if (pane) pane.classList.add("on");
+    });
+  });
+
+  /* ---------- lifecycle stepper ---------- */
+  var stages = Array.prototype.slice.call(document.querySelectorAll(".stage"));
+  var cur = 0, cycleTimer = null;
+  function activate(i) {
+    cur = i;
+    stages.forEach(function (s, k) {
+      s.classList.remove("on");
+      if (k === i) { void s.offsetWidth; s.classList.add("on"); }
+    });
+  }
+  function autoCycle() {
+    activate(cur);
+    cycleTimer = setTimeout(function () {
+      cur = (cur + 1) % stages.length;
+      autoCycle();
+    }, 2400);
+  }
+  stages.forEach(function (s) {
+    s.addEventListener("click", function () {
+      if (cycleTimer) clearTimeout(cycleTimer);
+      activate(parseInt(s.getAttribute("data-i"), 10));
+      cycleTimer = setTimeout(autoCycle, 5200);
+    });
+  });
+  if (reduced) { activate(0); } else { autoCycle(); }
+
+  /* ---------- terminal ---------- */
+  var term = document.getElementById("term");
+  function pad(n) { return n < 10 ? "0" + n : "" + n; }
+  function log(kind, text) {
+    var d = document.createElement("div");
+    var now = new Date();
+    d.innerHTML = '<span class="t-time">' + pad(now.getHours()) + ":" + pad(now.getMinutes()) +
+      ":" + pad(now.getSeconds()) + '</span> <span class="t-' + kind + '">' + text + "</span>";
+    term.appendChild(d);
+    while (term.childNodes.length > 6) term.removeChild(term.firstChild);
+  }
+
+  /* ---------- DAG animation ---------- */
+  var N = {};
+  ["hook", "val", "fan", "llm", "tf", "merge", "appr", "done", "dlq"].forEach(function (k) {
+    N[k] = document.getElementById("n-" + k);
+  });
+  function setState(node, state) {
+    if (!node) return;
+    node.setAttribute("class", "n" + (state ? " is-" + state : ""));
+  }
+  function resetAll() {
+    Object.keys(N).forEach(function (k) { setState(N[k], ""); });
+  }
+  function edge(id) { return document.getElementById(id); }
+
+  function flow(id, dur, color, cb) {
+    var p = edge(id);
+    if (!p || reduced) { if (cb) cb(); return; }
+    var len = p.getTotalLength();
+    var c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("r", "3.2");
+    c.setAttribute("fill", color);
+    c.setAttribute("filter", "drop-shadow(0 0 5px " + color + ")");
+    p.parentNode.appendChild(c);
+    p.classList.add("flow");
+    var t0 = performance.now();
+    (function step(t) {
+      var k = Math.min(1, (t - t0) / dur);
+      var pt = p.getPointAtLength(len * k);
+      c.setAttribute("cx", pt.x);
+      c.setAttribute("cy", pt.y);
+      if (k < 1) { requestAnimationFrame(step); }
+      else { p.classList.remove("flow"); p.parentNode.removeChild(c); if (cb) cb(); }
+    })(t0);
+  }
+
+  var TEAL = "#2DE1C2", VIOLET = "#8B7BFF", AMBER = "#FFB454";
+  var loopCount = 0;
+
+  function runSuccess(t) {
+    t(0,    function () { setState(N.hook, "run"); log("engine", "POST /api/workflows/order-flow/instances"); });
+    t(700,  function () { setState(N.hook, "done"); setState(N.val, "run"); flow("e-hook-val", 500, TEAL);
+                          log("node", "validate · 输入校验通过"); });
+    t(1500, function () { setState(N.val, "done"); setState(N.fan, "run"); flow("e-val-fan", 500, TEAL);
+                          log("node", "fan-out · 并行执行 2 个分支"); });
+    t(2100, function () { setState(N.fan, "done"); setState(N.llm, "run"); setState(N.tf, "run");
+                          flow("e-fan-a", 550, VIOLET); flow("e-fan-b", 550, TEAL);
+                          log("node", "llm-tag · 调用 LLM 打标 (attempt 1)"); });
+    t(3100, function () { setState(N.tf, "done"); setState(N.llm, "done"); setState(N.merge, "run");
+                          flow("e-a-merge", 500, VIOLET); flow("e-b-merge", 500, TEAL);
+                          log("node", "merge · ${llm-tag.output} 注入上游结果"); });
+    t(4000, function () { setState(N.merge, "done"); setState(N.appr, "wait");
+                          flow("e-merge-appr", 500, TEAL);
+                          log("engine", "approval · 挂起等待审批事件 · timeout 24h"); });
+    t(5600, function () { setState(N.appr, "done"); setState(N.done, "done");
+                          flow("e-appr-done", 500, TEAL);
+                          log("engine", "instance completed · 6 nodes · 已持久化"); });
+  }
+
+  function runFailure(t) {
+    t(0,    function () { setState(N.hook, "run"); log("engine", "POST /api/workflows/order-flow/instances"); });
+    t(700,  function () { setState(N.hook, "done"); setState(N.val, "run"); flow("e-hook-val", 500, TEAL); });
+    t(1400, function () { setState(N.val, "done"); setState(N.fan, "run"); flow("e-val-fan", 500, TEAL);
+                          log("node", "fan-out · 并行执行 2 个分支"); });
+    t(2000, function () { setState(N.fan, "done"); setState(N.llm, "done"); setState(N.tf, "fail");
+                          flow("e-fan-a", 550, VIOLET);
+                          log("warn", "transform 失败 (attempt 1/3) · 自动重试"); });
+    t(3100, function () { setState(N.tf, "run"); log("warn", "transform 重试中 (attempt 2/3)"); });
+    t(3900, function () { setState(N.tf, "fail"); log("warn", "transform 失败 (attempt 2/3) · 自动重试"); });
+    t(4800, function () { setState(N.tf, "run"); log("warn", "transform 重试中 (attempt 3/3)"); });
+    t(5600, function () { setState(N.tf, "fail"); setState(N.appr, "fail");
+                          flow("e-appr-dlq", 600, AMBER);
+                          log("dlq", "重试耗尽 → dead-letter queue · 等待人工补偿"); });
+    t(6600, function () { setState(N.dlq, "dlq"); log("dlq", "POST /api/instances/:id/compensate 可编程处理"); });
+  }
+
+  function schedule(steps) {
+    var timers = [];
+    steps.forEach(function (s) { timers.push(setTimeout(s[1], s[0])); });
+    return timers;
+  }
+
+  function loop() {
+    resetAll();
+    var steps = [];
+    var t = function (at, fn) { steps.push([at, fn]); };
+    var isFail = loopCount % 3 === 2;
+    if (isFail) { runFailure(t); } else { runSuccess(t); }
+    var total = steps[steps.length - 1][0] + 2200;
+    schedule(steps);
+    setTimeout(function () { loopCount++; loop(); }, total);
+  }
+
+  if (reduced) {
+    setState(N.hook, "done"); setState(N.val, "done"); setState(N.fan, "done");
+    setState(N.llm, "done"); setState(N.tf, "done"); setState(N.merge, "done");
+    setState(N.appr, "done"); setState(N.done, "done");
+    log("engine", "instance completed · 静态预览 (prefers-reduced-motion)");
+  } else {
+    log("engine", "engine ready · file persistence → ./.ts-workflow-engine-data");
+    setTimeout(loop, 900);
+  }
+})();
+</script>
+
+<script type="module">
+/* ---------- 3D starfield (three.js via CDN; graceful 2D fallback) ---------- */
+const REDUCED3D = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (!REDUCED3D) {
+  const CDNS = [
+    "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "https://unpkg.com/three@0.160.0/build/three.module.js"
+  ];
+  let THREEMOD = null;
+  for (const url of CDNS) {
+    try { THREEMOD = await import(url); break; } catch (err) { /* try next CDN */ }
+  }
+  if (THREEMOD && !window.__fallback2D) {
+    initScene3D(THREEMOD);
+  } else if (!THREEMOD && window.__sceneFallback2D) {
+    window.__sceneFallback2D();
+  }
+}
+
+function initScene3D(THREE) {
+  const canvas = document.getElementById("bg3d-canvas");
+  if (!canvas || window.__scene3DReady) return;
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  const DPR = Math.min(2, window.devicePixelRatio || 1);
+  renderer.setPixelRatio(DPR);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.FogExp2(0x07090e, 0.10);
+  const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 60);
+  camera.position.set(0, 0, 5.6);
+
+  const group = new THREE.Group();
+  scene.add(group);
+
+  const TEAL = 0x2de1c2, VIOLET = 0x8b7bff, ICE = 0x7fe0ff;
+
+  /* spherical point cloud */
+  const N = 820;
+  const pos = new Float32Array(N * 3);
+  const col = new Float32Array(N * 3);
+  const pts = [];
+  for (let i = 0; i < N; i++) {
+    const r = 1.5 + Math.pow(Math.random(), 0.7) * 1.9;
+    const th = Math.random() * Math.PI * 2;
+    const ph = Math.acos(2 * Math.random() - 1);
+    const x = r * Math.sin(ph) * Math.cos(th);
+    const y = r * Math.sin(ph) * Math.sin(th);
+    const z = r * Math.cos(ph) * 0.72;
+    pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+    const roll = Math.random();
+    const c = roll < .62 ? TEAL : roll < .86 ? VIOLET : ICE;
+    col[i * 3] = (c >> 16 & 255) / 255;
+    col[i * 3 + 1] = (c >> 8 & 255) / 255;
+    col[i * 3 + 2] = (c & 255) / 255;
+    pts.push([x, y, z]);
+  }
+  const pGeo = new THREE.BufferGeometry();
+  pGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  pGeo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  group.add(new THREE.Points(pGeo, new THREE.PointsMaterial({
+    size: 0.035, vertexColors: true, transparent: true, opacity: .85,
+    blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true
+  })));
+
+  /* precomputed proximity links */
+  const linkPos = [];
+  const LIM2 = 0.62 * 0.62;
+  outer: for (let i = 0; i < N; i++) {
+    for (let j = i + 1; j < N; j++) {
+      const dx = pts[i][0] - pts[j][0], dy = pts[i][1] - pts[j][1], dz = pts[i][2] - pts[j][2];
+      if (dx * dx + dy * dy + dz * dz < LIM2) {
+        linkPos.push(pts[i][0], pts[i][1], pts[i][2], pts[j][0], pts[j][1], pts[j][2]);
+        if (linkPos.length > 6600) break outer;
+      }
+    }
+  }
+  const lGeo = new THREE.BufferGeometry();
+  lGeo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(linkPos), 3));
+  group.add(new THREE.LineSegments(lGeo, new THREE.LineBasicMaterial({
+    color: 0x5f8ba8, transparent: true, opacity: .13,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  })));
+
+  /* lightning bolt logo (extruded wireframe) */
+  const shape = new THREE.Shape();
+  shape.moveTo(0.14, 0.52); shape.lineTo(-0.30, 0.03); shape.lineTo(-0.03, 0.03);
+  shape.lineTo(-0.13, -0.52); shape.lineTo(0.30, -0.05); shape.lineTo(0.03, -0.05);
+  shape.closePath();
+  const boltGeo = new THREE.ExtrudeGeometry(shape, {
+    depth: 0.14, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2
+  });
+  boltGeo.center();
+  const bolt = new THREE.Group();
+  bolt.add(new THREE.Mesh(boltGeo, new THREE.MeshBasicMaterial({
+    color: TEAL, transparent: true, opacity: .10,
+    blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+  })));
+  bolt.add(new THREE.LineSegments(new THREE.EdgesGeometry(boltGeo, 18),
+    new THREE.LineBasicMaterial({ color: TEAL, transparent: true, opacity: .8 })));
+  bolt.scale.setScalar(1.65);
+  group.add(bolt);
+
+  /* halo rings */
+  function makeRing(r, color, op) {
+    return new THREE.Mesh(
+      new THREE.TorusGeometry(r, 0.006, 6, 160),
+      new THREE.MeshBasicMaterial({ color, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false })
+    );
+  }
+  const ring1 = makeRing(1.28, TEAL, .38);
+  ring1.rotation.x = Math.PI * 0.46;
+  const ring2 = makeRing(1.62, VIOLET, .28);
+  ring2.rotation.x = Math.PI * 0.58; ring2.rotation.y = 0.5;
+  group.add(ring1); group.add(ring2);
+
+  /* interaction: drag empty space to rotate (fine pointers only, with inertia) */
+  let autoY = 0, userY = 0, userX = 0, velY = 0, velX = 0;
+  let dragging = false, lx = 0, ly = 0;
+  const fine = window.matchMedia("(pointer:fine)").matches;
+  const INTERACTIVE = "a,button,pre,input,textarea,select,nav,.engine,.card,.stage,.tab,.ex,.install";
+  if (fine) {
+    window.addEventListener("pointerdown", (e) => {
+      if (e.target && e.target.closest && e.target.closest(INTERACTIVE)) return;
+      dragging = true; lx = e.clientX; ly = e.clientY; velY = 0; velX = 0;
+    });
+    window.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - lx, dy = e.clientY - ly;
+      lx = e.clientX; ly = e.clientY;
+      velY = dx * 0.0045; velX = dy * 0.0030;
+      userY += velY;
+      userX = Math.max(-0.55, Math.min(0.55, userX + velX));
+    });
+    const stop = () => { dragging = false; };
+    window.addEventListener("pointerup", stop);
+    window.addEventListener("pointercancel", stop);
+  }
+
+  const clock = new THREE.Clock();
+  let raf = null;
+  function frame() {
+    raf = requestAnimationFrame(frame);
+    const t = clock.getElapsedTime();
+    if (!dragging) {
+      velY *= 0.95; velX *= 0.95;
+      userY += velY;
+      userX = Math.max(-0.55, Math.min(0.55, userX + velX));
+      userX += (0 - userX) * 0.008;
+    }
+    autoY += 0.0016;
+    group.rotation.y = autoY + userY;
+    group.rotation.x = userX * 0.8;
+    bolt.rotation.y = t * 0.5;
+    bolt.position.y = Math.sin(t * 0.8) * 0.08;
+    ring1.rotation.z = t * 0.12;
+    ring2.rotation.z = -t * 0.09;
+    renderer.render(scene, camera);
+  }
+
+  window.addEventListener("resize", () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { if (raf) { cancelAnimationFrame(raf); raf = null; } }
+    else if (!raf) frame();
+  });
+
+  window.__scene3DReady = true;
+  canvas.classList.add("ready");
+  frame();
+}
+</script>
+</body>
+</html>

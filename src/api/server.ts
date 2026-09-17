@@ -57,6 +57,17 @@ export interface ApiServerConfig {
 const apiShutdownHooks = new WeakMap<Server, () => Promise<void>>();
 
 /**
+ * 等待在途请求自然结束的宽限时间；超时后强制销毁剩余连接。
+ *
+ * 必须明显短于 `GracefulShutdown` 的 30s 超时和 `tsx watch` 的重启等待，
+ * 否则 Ctrl+C 之后监听端口会一直被占住。
+ */
+const API_CLOSE_GRACE_MS = parseEnvInt(process.env.API_CLOSE_GRACE_MS, 5000, {
+  min: 0,
+  max: 60000,
+});
+
+/**
  * 关闭 API 服务器的 HTTP 资源：webhook 管理器、WebSocket 连接与监听套接字。
  *
  * 由调用方注册到 `GracefulShutdown` 的关闭链中，保证与引擎、worker 池、
@@ -71,8 +82,25 @@ export async function closeApiServer(server: Server): Promise<void> {
     return;
   }
 
+  // 同 `startApiServer` 的关闭钩子：先停监听并释放空闲 keep-alive 连接，
+  // 宽限期过后销毁仍然占着端口的连接。
   await new Promise<void>((resolve) => {
-    server.close(() => resolve());
+    let settled = false;
+    const done = (): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      resolve();
+    };
+
+    const forceTimer = setTimeout(() => {
+      server.closeAllConnections();
+      done();
+    }, API_CLOSE_GRACE_MS);
+    forceTimer.unref();
+
+    server.close(done);
+    server.closeIdleConnections();
   });
 }
 
@@ -555,11 +583,41 @@ export async function startApiServer(
     apiShutdownHooks.set(server, async () => {
       webhookManager.destroy();
       consoleWsManager.shutdown();
+
+      // `server.close()` only stops accepting NEW connections; it resolves
+      // once every existing socket is gone. Idle HTTP keep-alive sockets
+      // (a browser tab on /api-docs) and half-closed WebSockets can hold the
+      // listening port well past the shutdown timeout — in dev that shows up
+      // as `tsx watch` reporting "Previous process hasn't exited yet" and the
+      // port staying bound after Ctrl+C.
+      //
+      // So: stop the listener, drop idle sockets immediately, and give the
+      // in-flight ones a bounded grace period before forcing them closed.
       await new Promise<void>((resolve) => {
-        server.close(() => {
+        let settled = false;
+        const done = (): void => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(forceTimer);
           Logger.info("system", "api", "Server closed");
           resolve();
-        });
+        };
+
+        const forceTimer = setTimeout(() => {
+          Logger.warn(
+            "system",
+            "api",
+            `Connections still open after ${API_CLOSE_GRACE_MS}ms, destroying them`,
+          );
+          server.closeAllConnections();
+          done();
+        }, API_CLOSE_GRACE_MS);
+        forceTimer.unref();
+
+        server.close(done);
+        // Keep-alive sockets with no request in flight are released at once;
+        // active requests are left alone until the grace period expires.
+        server.closeIdleConnections();
       });
     });
 

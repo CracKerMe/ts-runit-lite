@@ -5,6 +5,9 @@ applications. It includes workflow execution, a REST API, events, Cron
 scheduling, retries, and local file persistence. Redis and databases are not
 required for local use.
 
+Project landing page: open [`index.html`](./index.html) in a browser for a visual
+overview of the engine (animated DAG execution, instance lifecycle, and examples).
+
 ## Install
 
 Add the library to an existing TypeScript project:

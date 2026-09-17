@@ -44,7 +44,7 @@ import { LocalFileStorage } from "./LocalFileStorage";
 import type { StorageProvider } from "./StorageProvider";
 
 /** @deprecated Use `.ts-workflow-engine-data` as the default directory. */
-const LEGACY_DEFAULT_DIR = ".ts-runit-data";
+const LEGACY_DEFAULT_DIR = ".ts-workflow-engine-data";
 const DEFAULT_DIR = ".ts-workflow-engine-data";
 
 /**

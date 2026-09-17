@@ -228,23 +228,27 @@ function initializeBuiltInFunctions(): void {
     if (Array.isArray(s)) return s.length;
     return 0;
   });
-  registerFunction("substring", (s: string, start: number, end?: number) => {
-    return s.substring(start, end);
+  registerFunction("substring", (s: unknown, start: number, end?: number) => {
+    return String(s ?? "").substring(start, end);
   });
-  registerFunction("toLowerCase", (s: string) => s.toLowerCase());
-  registerFunction("toUpperCase", (s: string) => s.toUpperCase());
-  registerFunction("trim", (s: string) => s.trim());
+  registerFunction("toLowerCase", (s: unknown) =>
+    String(s ?? "").toLowerCase(),
+  );
+  registerFunction("toUpperCase", (s: unknown) =>
+    String(s ?? "").toUpperCase(),
+  );
+  registerFunction("trim", (s: unknown) => String(s ?? "").trim());
   registerFunction("concat", (...args: any[]) => args.join(""));
   registerFunction("includes", (s: string | any[], search: any) => {
     if (typeof s === "string") return s.includes(String(search));
     if (Array.isArray(s)) return s.includes(search);
     return false;
   });
-  registerFunction("startsWith", (s: string, prefix: string) =>
-    s.startsWith(prefix),
+  registerFunction("startsWith", (s: unknown, prefix: string) =>
+    String(s ?? "").startsWith(String(prefix)),
   );
-  registerFunction("endsWith", (s: string, suffix: string) =>
-    s.endsWith(suffix),
+  registerFunction("endsWith", (s: unknown, suffix: string) =>
+    String(s ?? "").endsWith(String(suffix)),
   );
 
   // Date functions
@@ -679,6 +683,70 @@ class ExpressionParser {
   }
 
   /**
+   * 处理连字符节点 id：`check-stock.output.x` 被 tokenizer 切成
+   * `check` `-` `stock.output.x`，默认会当成减法并静默求值成 NaN。
+   *
+   * 仅在以下条件全部满足时合并，其余情况一律保持减法语义：
+   *   1. 形如 IDENTIFIER '-' IDENTIFIER；
+   *   2. 三个 token 在源串里紧邻（位置连续），即写法是 `a-b` 而非 `a - b`；
+   *   3. 合并后的名字（取第一段做根）确实能在上下文中找到。
+   *
+   * 合并成功时消费掉多余 token 并返回完整路径，否则返回 null 且不移动位置。
+   * 注意 `a-b-c` 需要反复合并，因此用循环处理。
+   */
+  private tryMergeHyphenIdentifier(token: Token): string | null {
+    if (typeof token.value !== "string") return null;
+
+    // 先把所有"紧邻"的 `- IDENT` 片段收集起来，再取最长的、在上下文中
+    // 确实存在的那个前缀。不能边走边判断：`a-b-c` 的中间态 `a-b` 通常
+    // 并不存在，提前 break 会让完整的 `a-b-c` 永远匹配不到。
+    const candidates: Array<{ name: string; lookahead: number }> = [];
+    let name = token.value;
+    let lookahead = this.position;
+
+    for (;;) {
+      const opToken = this.tokens[lookahead];
+      const nextToken = this.tokens[lookahead + 1];
+      if (
+        !opToken ||
+        !nextToken ||
+        opToken.type !== TokenType.OPERATOR ||
+        opToken.value !== "-" ||
+        nextToken.type !== TokenType.IDENTIFIER ||
+        typeof nextToken.value !== "string"
+      ) {
+        break;
+      }
+
+      // 必须是紧邻书写：'-' 紧跟在左标识符末尾，右标识符紧跟在 '-' 之后。
+      // 位置连续即可判定，`a - b` 因空格位置不连续而被排除。
+      if (
+        opToken.position !== token.position + name.length ||
+        nextToken.position !== opToken.position + 1
+      ) {
+        break;
+      }
+
+      name = `${name}-${nextToken.value}`;
+      lookahead += 2;
+      candidates.push({ name, lookahead });
+    }
+
+    // 最长优先：`a-b-c` 优于 `a-b`。
+    for (let i = candidates.length - 1; i >= 0; i--) {
+      const candidate = candidates[i];
+      // 以根段（第一个 '.' 之前）判断是否为真实存在的标识符，
+      // 这样 `check-stock.output.x` 能靠 `check-stock` 命中。
+      const root = candidate.name.split(".")[0];
+      if (getNestedValue(this.context, root) === undefined) continue;
+      this.position = candidate.lookahead;
+      return candidate.name;
+    }
+
+    return null;
+  }
+
+  /**
    * Parse a lambda expression: `param => body` or `(p1, p2) => body`
    * Must be called when the current token is IDENTIFIER or LPAREN that starts a lambda.
    * Only consumes the tokens if a valid `=>` follows.
@@ -857,8 +925,16 @@ class ExpressionParser {
             outputQueue.push(method(...methodArgs));
           }
         } else {
-          // Variable reference
-          let value = getNestedValue(this.context, token.value);
+          // Variable reference.
+          //
+          // 节点 id 常含连字符（如 "check-stock"），而 tokenizer 不把 '-' 收进
+          // 标识符，于是 `check-stock.output.x` 会被切成 `check` `-`
+          // `stock.output.x` 当作减法，两边都不存在时求值成 NaN，
+          // JSON 序列化后变成 null——静默出错且无法排查。
+          // 这里按"紧邻且拼起来在上下文中存在"的条件把它们合并回一个标识符；
+          // 带空格的 `a - b` 以及拼起来查不到的情况仍按减法处理。
+          const merged = this.tryMergeHyphenIdentifier(token);
+          let value = getNestedValue(this.context, merged ?? token.value);
 
           // Support method chaining on variable values
           while (this.currentToken().type === TokenType.DOT) {
@@ -1179,7 +1255,12 @@ export function evaluateCondition(
 }
 
 /**
- * 验证表达式语法（不执行）
+ * 验证表达式语法。
+ *
+ * 注意：实现是用空上下文求值（`parser.parse()` 与 `evaluate()` 同一条路径），
+ * 并非纯语法检查——表达式里的函数会被真实调用，只是实参多为 undefined。
+ * 因此内置函数必须对 undefined 实参保持健壮（例如先 `String(x ?? "")` 再取方法），
+ * 否则合法表达式会在注册阶段被误判为语法错误。
  */
 export function validateExpression(expression: string): {
   valid: boolean;

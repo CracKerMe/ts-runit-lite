@@ -13,7 +13,7 @@
 
 import * as fs from "node:fs";
 
-const oldDir = process.argv[2] || ".ts-runit-data";
+const oldDir = process.argv[2] || ".ts-workflow-engine-data";
 const newDir = process.argv[3] || ".ts-workflow-engine-data";
 
 if (!fs.existsSync(oldDir)) {

@@ -13,6 +13,9 @@ import type { WorkflowInstance } from "../model/Instance";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { errorMessage, Logger } from "../utils/Logger";
 
+/** 关闭帧发出后等待对端回应的时间，超时直接 terminate 释放 socket。 */
+const WS_CLOSE_GRACE_MS = 1000;
+
 export interface InstanceUpdate {
   instanceId: string;
   timestamp: number;
@@ -337,17 +340,41 @@ export class ConsoleWebSocketManager {
 
   shutdown(): void {
     for (const ws of this.globalConnections) {
-      ws.close();
+      this.closeSocket(ws);
     }
     this.globalConnections.clear();
 
     for (const conns of this.instanceConnections.values()) {
       for (const ws of conns) {
-        ws.close();
+        this.closeSocket(ws);
       }
     }
     this.instanceConnections.clear();
 
     Logger.info("api", "console-ws", "WebSocket manager shut down");
+  }
+
+  /**
+   * 关闭单个连接，并保证底层 socket 一定会被释放。
+   *
+   * `ws.close()` 只是发出关闭帧，然后等待对端回应——对端无响应时这条 TCP
+   * 连接会一直挂着，把 HTTP server 的监听端口一起拖住。所以这里加一个短
+   * 超时兜底 `terminate()`，Ctrl+C 之后端口不会被残留连接占用。
+   */
+  private closeSocket(ws: WebSocket): void {
+    try {
+      ws.close();
+    } catch {
+      ws.terminate();
+      return;
+    }
+
+    if (ws.readyState === ws.CLOSED) return;
+
+    const timer = setTimeout(() => {
+      if (ws.readyState !== ws.CLOSED) ws.terminate();
+    }, WS_CLOSE_GRACE_MS);
+    timer.unref();
+    ws.once("close", () => clearTimeout(timer));
   }
 }

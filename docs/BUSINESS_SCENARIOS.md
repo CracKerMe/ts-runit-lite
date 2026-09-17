@@ -8,6 +8,7 @@ ts-workflow-engine-lite 在真实业务中可覆盖的场景，并给出每个�
 > 这些是使用方需要自行接入的。引擎负责**编排**，不负责提供这些外部系统本身。
 >
 > 权威字段定义见 [NODE_REFERENCE.md](./NODE_REFERENCE.md)，架构约束见 [CLAUDE.md](../CLAUDE.md)。
+> 项目可视化总览见 [`index.html`](../index.html)（本地打开）
 
 ## 目录
 

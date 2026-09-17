@@ -2,6 +2,27 @@
 
 All notable changes to ts-workflow-engine-lite will be documented in this file.
 
+## [3.0.2] - 2026-09-17
+
+### Bug Fixes
+
+- **表达式引擎：连字符节点 ID 被误判为减法**：`${check-stock.output.x}` 这类含连字符的节点 ID 此前会被 tokenizer 切成 `check` `-` `stock.output.x`，当作减法静默求值成 `NaN`/`null`。现在按"紧邻书写且拼接后在上下文中存在"的条件把片段合并回完整标识符；带空格的 `a - b` 仍按减法处理。见 `src/engine/ExpressionEvaluator.ts`。
+- **表达式引擎：内置字符串函数在 `undefined` 参数下抛错**：`validateExpression` 实际是用空上下文执行一遍表达式（而非纯语法检查），`substring`/`toLowerCase`/`toUpperCase`/`trim`/`startsWith`/`endsWith` 之前假设入参一定是字符串，导致合法表达式在校验阶段被误判为语法错误。现在统一 `String(x ?? "")` 兜底。
+- **优雅关闭：Ctrl+C 后监听端口可能残留**：HTTP keep-alive 连接和未响应关闭帧的 WebSocket 会让 `server.close()` 迟迟不 resolve，开发模式下表现为 `tsx watch` 报 "Previous process hasn't exited yet"。现在关闭时立即释放空闲连接（`closeIdleConnections`），并给在途连接一个可配置的宽限期（`API_CLOSE_GRACE_MS`，默认 5s）后强制销毁（`closeAllConnections`）；`ConsoleWebSocketManager` 对每个 WebSocket 连接同样加了 1s 兜底 `terminate()`。
+- **优雅关闭：单个回调挂死会拖累后续清理**：`GracefulShutdown` 关闭链此前是整体一个 30s 超时，任一回调卡住会导致后面的回调完全不执行、直到整体超时强制退出。现在为单个回调加超时（默认 8s，`callbackTimeout` 可配置），超时后放弃等待、继续执行后续清理步骤。
+- **优雅关闭：父进程先于本进程退出时信号收不到**：`tsx watch` 等 watcher 在 Ctrl+C 时可能先于子进程退出或被强杀，子进程被 init 收养后既收不到信号也感知不到，导致监听端口一直占用。新增 `watchParentProcess()` 轮询 `ppid`，检测到被收养后主动走 `GracefulShutdown.trigger()` 关闭链，已接入 `src/cli.ts`。
+- **默认存储目录命名不一致**：`.env.example` 与 `scripts/migrate-storage-dir.ts` 中残留的旧目录名 `.ts-runit-data` 统一改为当前默认值 `.ts-workflow-engine-data`。
+
+### New Features
+
+- 新增项目可视化落地页 [`index.html`](./index.html)（DAG 执行动画、实例生命周期图示），README / README.zh / 业务场景文档 / 节点参考文档均已加上入口链接。
+- Playground 新增两个示例工作流：购物车结算（`map`/`reduce`/`filter` 聚合计算）与工单分级派单（`router` 优先级路由 + SLA 计算）。
+
+### Tests
+
+- 新增 `ExpressionEvaluator` 连字符标识符与内置字符串函数校验的单元测试。
+- 新增 `GracefulShutdown` 生命周期测试，覆盖单回调超时与父进程退出检测路径。
+
 ## [3.0.1] - 2026-09-17
 
 无破坏性变更。本次以内置文档站重写为主，附带一处 `wait` 外部定时器的错误处理修复。

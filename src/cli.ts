@@ -7,7 +7,7 @@
 
 import { closeApiServer, startApiServer } from "./api/server";
 import { bootstrap, loadEnv } from "./bootstrap";
-import { getShutdownInstance } from "./lifecycle";
+import { getShutdownInstance, watchParentProcess } from "./lifecycle";
 import { Logger } from "./utils/Logger";
 import { pathToFileURL } from "node:url";
 
@@ -29,6 +29,19 @@ export async function main(): Promise<void> {
 
     Logger.info("system", "api", "API server is running");
   }
+
+  // Ctrl+C 下 `tsx watch` 可能先于本进程退出（或被强杀），信号就再也送不到
+  // 这里。那样本进程会被 init 收养并继续持有监听端口，watcher 重启时报
+  // "Previous process hasn't exited yet"。主动检测被收养并走优雅关闭。
+  watchParentProcess(() => {
+    // 复用统一的关闭链；拿不到实例（比如关闭已在进行中）就直接退出。
+    const shutdown = getShutdownInstance();
+    if (shutdown && !shutdown.isInProgress()) {
+      void shutdown.trigger("parent-exit");
+    } else if (!shutdown) {
+      process.exit(0);
+    }
+  });
 
   Logger.info("system", "init", "Workflow engine started successfully");
 }

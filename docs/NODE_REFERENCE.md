@@ -6,6 +6,9 @@
 > 权威类型定义：[`src/model/Workflow.ts`](../src/model/Workflow.ts)（`TaskNode` / `WorkflowDefinition`）
 > 以及各执行器文件 `src/engine/executors/*.ts`。本文档是这些类型的结构化速查表；
 > 若两者冲突，以源码为准。
+>
+> 项目可视化总览见 [`index.html`](../index.html)（本地打开）启动 `pnpm dev:api` 后
+> 也可以在 `/docs/nodes` 交互式浏览同一份节点参考。
 
 ## 目录
 
