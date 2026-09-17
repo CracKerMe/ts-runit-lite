@@ -2,6 +2,37 @@
 
 All notable changes to ts-workflow-engine-lite will be documented in this file.
 
+## [3.0.1] - 2026-09-17
+
+无破坏性变更。本次以内置文档站重写为主，附带一处 `wait` 外部定时器的错误处理修复。
+
+### New Features
+
+- **内置文档站重写为分页版式**：概念、节点、REST 端点三类文档改由同一套渲染器（`src/api/docs/renderer.ts`）生成，按主题分页而非单页锚点。
+  - `GET /docs/concepts` 概念索引，`GET /docs/concepts/:topic` 单主题页
+  - `GET /docs/nodes` 节点索引，`GET /docs/nodes/:type` 单节点页（结构由 `WorkflowSchema` 生成，逐参数展开必填/可选字段）
+  - `GET /api-docs` 端点索引，`GET /api-docs/:slug` 单端点页（数据源为 `openApiSpec`）
+  - `GET /api-docs/openapi.json` 保持不变
+  - 未匹配的 `:topic` / `:type` / `:slug` 交给 404 处理，不会返回空页面
+- **节点文档目录统一为 `NODE_DOCS`**（`src/api/nodeDocs.ts`）：首页节点卡片与节点文档页共用同一份数据，不再各自维护一份节点清单；首页卡片现可点击跳转到对应节点文档页。
+- **新增导出**：`generateConceptIndexHtml` / `generateConceptDocHtml`、`generateNodeIndexHtml` / `generateNodeDocHtml`、`generateApiIndexHtml` / `generateApiEndpointHtml`。
+
+### Bug Fixes
+
+- **`wait` 节点的外部定时器路径不再产生未处理的 Promise rejection**：该分支中的 `updateInstance()` / `externalTimer.schedule()` 此前在一个未被 catch 的异步流程里 await，失败会逃逸成 unhandled rejection 而不是走节点的 `onError`。现已整体包裹并转交 `onError`，调度失败按节点失败处理。
+
+### Improvements
+
+- **OpenAPI 规范补全字段描述**：`tags`、Signal/Query/Update 的 `name` 与 `payload`、`correlationId`（含幂等语义说明）等此前无描述的字段已补齐，新的端点文档页直接取用这些描述。
+- 全仓 oxfmt 格式化收敛（`scripts/fix-esm-imports.ts`、`src/storage/database-adapters.ts`、`src/engine/WorkflowEngine.ts` 等）。
+
+### Deprecations
+
+以下导出仍可用，仅标注 `@deprecated`，保留给依赖旧版式的宿主应用：
+
+- `generateConceptsDocHtml`（旧单页锚点版式）→ 改用 `generateConceptIndexHtml` / `generateConceptDocHtml`
+- `generateApiDocsHtml`（Swagger UI 页面）→ 改用 `generateApiIndexHtml`
+
 ## [3.0.0] - 2026-09-16
 
 ### Breaking Changes

@@ -140,7 +140,9 @@ class SnapshotBackedStorage extends MemoryStorage {
     await this.mutate(() => super.saveInstance(instance));
   }
 
-  override async casUpdateInstance(instance: WorkflowInstance): Promise<boolean> {
+  override async casUpdateInstance(
+    instance: WorkflowInstance,
+  ): Promise<boolean> {
     return this.mutate(() => super.casUpdateInstance(instance));
   }
 
@@ -156,7 +158,9 @@ class SnapshotBackedStorage extends MemoryStorage {
     await this.mutate(() => super.deleteWorkflow(workflowId));
   }
 
-  override async saveEventWaitingState(state: EventWaitingState): Promise<void> {
+  override async saveEventWaitingState(
+    state: EventWaitingState,
+  ): Promise<void> {
     await this.mutate(() => super.saveEventWaitingState(state));
   }
 
@@ -167,11 +171,15 @@ class SnapshotBackedStorage extends MemoryStorage {
     await this.mutate(() => super.deleteEventWaitingState(instanceId, nodeId));
   }
 
-  override async saveWorkflowWithMetadata(workflow: StoredWorkflow): Promise<void> {
+  override async saveWorkflowWithMetadata(
+    workflow: StoredWorkflow,
+  ): Promise<void> {
     await this.mutate(() => super.saveWorkflowWithMetadata(workflow));
   }
 
-  override async saveWorkflowVersion(version: StoredWorkflowVersion): Promise<void> {
+  override async saveWorkflowVersion(
+    version: StoredWorkflowVersion,
+  ): Promise<void> {
     await this.mutate(() => super.saveWorkflowVersion(version));
   }
 
@@ -198,7 +206,9 @@ class SnapshotBackedStorage extends MemoryStorage {
       status?: "pending" | "running" | "completed" | "failed" | "skipped";
     },
   ): Promise<void> {
-    await this.mutate(() => super.updateNodeMetrics(instanceId, nodeId, metrics));
+    await this.mutate(() =>
+      super.updateNodeMetrics(instanceId, nodeId, metrics),
+    );
   }
 
   override async saveEvent(event: EventRecord): Promise<void> {
@@ -213,7 +223,10 @@ class SnapshotBackedStorage extends MemoryStorage {
     await this.mutate(() => super.saveHeartbeat(state));
   }
 
-  override async deleteHeartbeat(instanceId: string, nodeId: string): Promise<void> {
+  override async deleteHeartbeat(
+    instanceId: string,
+    nodeId: string,
+  ): Promise<void> {
     await this.mutate(() => super.deleteHeartbeat(instanceId, nodeId));
   }
 }
@@ -256,10 +269,9 @@ class SqliteSnapshotPersistence implements SnapshotPersistence {
     if (this.db) {
       return;
     }
-    const loadImport = new Function(
-      "name",
-      "return import(name)",
-    ) as (name: string) => Promise<any>;
+    const loadImport = new Function("name", "return import(name)") as (
+      name: string,
+    ) => Promise<any>;
     const mod = await loadImport("better-sqlite3").catch(() => null);
     if (!mod) {
       throw new Error(
@@ -318,13 +330,14 @@ class PostgresSnapshotPersistence implements SnapshotPersistence {
     if (this.pool) {
       return;
     }
-    const loadImport = new Function(
-      "name",
-      "return import(name)",
-    ) as (name: string) => Promise<any>;
+    const loadImport = new Function("name", "return import(name)") as (
+      name: string,
+    ) => Promise<any>;
     const mod = await loadImport("pg").catch(() => null);
     if (!mod) {
-      throw new Error('Postgres storage adapter requires optional dependency "pg".');
+      throw new Error(
+        'Postgres storage adapter requires optional dependency "pg".',
+      );
     }
     const Pool = mod.Pool;
     this.pool = new Pool({ connectionString: this.connectionString });

@@ -3,6 +3,8 @@
  * 与 welcomePage.ts 中的概览卡片配套，通过锚点跳转。
  */
 
+import { NODE_DOCS as SHARED_NODE_DOCS } from "./nodeDocs";
+
 interface OperatorInfo {
   op: string;
   precedence: number;
@@ -25,6 +27,182 @@ interface FnGroup {
   category: string;
   items: string;
 }
+
+interface NodeDocInfo {
+  type: string;
+  label: string;
+  intro: string;
+  fields: string;
+  useCase: string;
+  output: string;
+  notes: string;
+  example: string;
+}
+
+const LEGACY_NODE_DOCS: NodeDocInfo[] = [
+  [
+    "action",
+    "动作 Action",
+    "执行注册的自定义函数。",
+    "函数注册名；无固定声明式 config。",
+    "校验、领域规则、内部服务调用。",
+    "函数返回值写入 output。",
+    "保持幂等，副作用配合重试/补偿。",
+    '{ type: "action", function: "validateOrder" }',
+  ],
+  [
+    "wait",
+    "等待 Wait",
+    "按时长、截止时间或信号暂停流程。",
+    "durationMs、until；兼容 timeout。",
+    "延时、定时、等待外部回执。",
+    "唤醒后沿 next 继续。",
+    "等待状态会持久化。",
+    '{ type: "wait", config: { durationMs: 5000 } }',
+  ],
+  [
+    "event",
+    "事件 Event",
+    "等待指定名称的外部事件。",
+    "onEvent、事件 payload。",
+    "支付回调、Webhook、异步完成事件。",
+    "输出事件 payload。",
+    "事件名建议带业务命名空间。",
+    '{ type: "event", config: { onEvent: "order.paid" } }',
+  ],
+  [
+    "rollback",
+    "回滚 Rollback",
+    "执行前序节点的补偿逻辑。",
+    "rollbackTo。",
+    "库存、支付、资源预留补偿。",
+    "产生补偿结果并沿回滚链继续。",
+    "不是数据库事务回滚，补偿需可重试。",
+    '{ type: "rollback", rollbackTo: "reserve-stock" }',
+  ],
+  [
+    "subworkflow",
+    "子工作流 Subworkflow",
+    "启动另一个已注册工作流。",
+    "subworkflowId、waitForCompletion。",
+    "复用审批、履约等复杂流程。",
+    "同步返回子流程结果，异步返回启动信息。",
+    "先注册子工作流并约定输入输出契约。",
+    '{ type: "subworkflow", config: { subworkflowId: "payment-flow", waitForCompletion: true } }',
+  ],
+  [
+    "http",
+    "HTTP 请求 HTTP",
+    "调用外部 HTTP endpoint。",
+    "method、url、headers、query、body。",
+    "第三方 API、微服务、Webhook。",
+    "状态码、响应头与响应体。",
+    "配置超时、重试和幂等键；慢请求可用 worker。",
+    '{ type: "http", config: { method: "GET", url: "https://api.example.com/resource" } }',
+  ],
+  [
+    "sql",
+    "SQL 查询 SQL",
+    "在配置连接上执行 SQL。",
+    "connection、query、params。",
+    "读写业务数据、审计记录。",
+    "查询行或执行元数据。",
+    "使用绑定参数，谨慎处理长事务和大结果集。",
+    '{ type: "sql", config: { connection: "default", query: "SELECT * FROM orders" } }',
+  ],
+  [
+    "queue",
+    "队列 Queue",
+    "发布或消费消息。",
+    "operation、queue、message。",
+    "削峰、解耦、后台任务。",
+    "发布确认或消费消息。",
+    "它连接消息中间件，不等同于 event 唤醒。",
+    '{ type: "queue", config: { operation: "publish", queue: "default", message: { text: "msg" } } }',
+  ],
+  [
+    "condition",
+    "条件 Condition",
+    "按布尔表达式二路分支。",
+    "condition、trueBranch、falseBranch。",
+    "资格、风控、状态判断。",
+    "分支选择结果与表达式值。",
+    "复杂多路判断使用 router。",
+    '{ type: "condition", config: { condition: "${context.flag === true}" } }',
+  ],
+  [
+    "router",
+    "路由 Router",
+    "按顺序匹配多个条件并路由。",
+    "routes(condition/target)、defaultTarget。",
+    "按类型、地区、等级分流。",
+    "命中的 route 与目标。",
+    "顺序就是优先级，建议配置兜底。",
+    '{ type: "router", config: { routes: [{ condition: "${context.vip}", target: "vip" }] } }',
+  ],
+  [
+    "loop",
+    "循环 Loop",
+    "遍历 collection 执行 body。",
+    "collection、itemVariable、body。",
+    "批量处理和逐项调用。",
+    "每次迭代结果集合。",
+    "控制集合规模与失败策略。",
+    '{ type: "loop", config: { collection: "${context.items}", itemVariable: "item", body: "process-item" } }',
+  ],
+  [
+    "approval",
+    "审批 Approval",
+    "等待 approve/reject 信号。",
+    "prompt、approvedTarget、rejectedTarget。",
+    "费用、发布、合规审批。",
+    "决定、审批人和备注。",
+    "等待状态持久化，通过 signal 唤醒。",
+    '{ type: "approval", config: { prompt: "Approve this request?" } }',
+  ],
+  [
+    "notification",
+    "通知 Notification",
+    "通过渠道发送消息。",
+    "channel、target、template。",
+    "告警、提醒、状态播报。",
+    "发送确认与渠道响应。",
+    "按业务重要性决定发送失败是否阻断流程。",
+    '{ type: "notification", config: { channel: "slack", target: "#alerts" } }',
+  ],
+  [
+    "join",
+    "汇聚 Join",
+    "等待并行分支 all 或 any 完成。",
+    "waitFor、mode。",
+    "并行服务调用、结果聚合。",
+    "完成分支及输出集合。",
+    "all 为默认模式，共享状态需避免覆盖。",
+    '{ type: "join", config: { waitFor: ["branchA", "branchB"], mode: "all" } }',
+  ],
+  [
+    "transform",
+    "转换 Transform",
+    "用类型化表达式重塑输出。",
+    "output：字段到表达式的映射。",
+    "字段映射、计算、组装 payload。",
+    "新对象，保留数字/数组/对象类型。",
+    "表达式会求值而非简单字符串插值。",
+    '{ type: "transform", config: { output: { total: "${node1.output.price * node1.output.qty}" } } }',
+  ],
+].map(([type, label, intro, fields, useCase, output, notes, example]) => ({
+  type,
+  label,
+  intro,
+  fields,
+  useCase,
+  output,
+  notes,
+  example,
+}));
+
+const NODE_DOCS = SHARED_NODE_DOCS;
+void LEGACY_NODE_DOCS;
 
 const FN_GROUPS: FnGroup[] = [
   { category: "数学", items: "abs, ceil, floor, round, min, max, sqrt, pow" },
@@ -79,6 +257,26 @@ export function generateConceptsDocHtml(port: number): string {
   const fnRows = FN_GROUPS.map(
     (g) =>
       `<tr><td>${escapeHtml(g.category)}</td><td><code>${escapeHtml(g.items)}</code></td></tr>`,
+  ).join("\n");
+
+  const nodeNav = NODE_DOCS.map(
+    (n) => `<a href="#node-${n.type}">${escapeHtml(n.label)}</a>`,
+  ).join("\n    ");
+  const nodeSections = NODE_DOCS.map(
+    (n) => `<section id="node-${n.type}" class="node-doc">
+    <h2>${escapeHtml(n.label)}</h2>
+    <p>${escapeHtml(n.intro)}</p>
+    <table><tbody>
+      <tr><th>适用场景</th><td>${escapeHtml(n.useCase)}</td></tr>
+      <tr><th>通用参数</th><td><code>${escapeHtml(n.commonParams)}</code></td></tr>
+      <tr><th>必填参数</th><td><code>${escapeHtml(n.requiredParams)}</code></td></tr>
+      <tr><th>选填参数</th><td><code>${escapeHtml(n.optionalParams)}</code></td></tr>
+      <tr><th>配置字段速览</th><td><code>${escapeHtml(n.fields)}</code></td></tr>
+      <tr><th>输出与行为</th><td>${escapeHtml(n.output)}</td></tr>
+      <tr><th>使用建议</th><td>${escapeHtml(n.notes)}</td></tr>
+    </tbody></table>
+    <pre><code>${escapeHtml(n.example)}</code></pre>
+  </section>`,
   ).join("\n");
 
   return `<!DOCTYPE html>
@@ -418,6 +616,8 @@ export function generateConceptsDocHtml(port: number): string {
 </header>
 <div class="layout">
   <nav>
+    <a href="#node-reference">节点类型参考</a>
+    ${nodeNav}
     <a href="#node-output">节点输出引用</a>
     <a href="#expressions">表达式引擎</a>
     <a href="#operators">运算符优先级</a>
@@ -437,6 +637,12 @@ export function generateConceptsDocHtml(port: number): string {
     <a href="#webhooks">通知与 Webhook</a>
   </nav>
   <main>
+
+  <section id="node-reference">
+    <h2>节点类型参考</h2>
+    <p>每个节点都从用途、字段、输出行为、适用场景和示例五个维度说明。首页节点卡片可直接跳转到对应章节。</p>
+  </section>
+  ${nodeSections}
 
   <section id="node-output">
     <h2>节点输出引用</h2>

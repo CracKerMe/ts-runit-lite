@@ -2,29 +2,17 @@
  * 首页使用说明：介绍核心节点类型、常用 API 端点和快速上手示例。
  */
 
+import { NODE_DOCS } from "./nodeDocs";
+
 interface NodeTypeInfo {
   type: string;
   label: string;
   desc: string;
 }
 
-const NODE_TYPES: NodeTypeInfo[] = [
-  { type: "action", label: "动作", desc: "执行自定义函数逻辑" },
-  { type: "wait", label: "等待", desc: "延时或等待指定时长" },
-  { type: "event", label: "事件", desc: "等待外部事件触发后继续" },
-  { type: "rollback", label: "回滚", desc: "执行补偿/回滚逻辑" },
-  { type: "subworkflow", label: "子工作流", desc: "调用另一个工作流定义" },
-  { type: "http", label: "HTTP", desc: "发起 HTTP 请求" },
-  { type: "sql", label: "SQL", desc: "执行 SQL 查询/语句" },
-  { type: "queue", label: "队列", desc: "消息队列生产/消费" },
-  { type: "condition", label: "条件", desc: "基于表达式的分支判断" },
-  { type: "router", label: "路由", desc: "多分支路由选择" },
-  { type: "loop", label: "循环", desc: "循环执行子节点" },
-  { type: "approval", label: "审批", desc: "等待人工审批" },
-  { type: "notification", label: "通知", desc: "发送通知消息" },
-  { type: "join", label: "汇聚", desc: "等待多个并行分支全部/任一完成" },
-  { type: "transform", label: "转换", desc: "按表达式重塑节点输出数据" },
-];
+const NODE_TYPES: NodeTypeInfo[] = NODE_DOCS.map(
+  ({ type, label, shortDescription: desc }) => ({ type, label, desc }),
+);
 
 interface EndpointInfo {
   method: string;
@@ -79,7 +67,7 @@ function escapeHtml(value: string): string {
 export function generateWelcomeHtml(port: number): string {
   const nodeCards = NODE_TYPES.map(
     (n) =>
-      `<div class="node-card"><div class="node-head"><code>${escapeHtml(n.type)}</code><span class="node-label">${escapeHtml(n.label)}</span></div><p>${escapeHtml(n.desc)}</p></div>`,
+      `<a class="node-card" href="/docs/nodes/${encodeURIComponent(n.type)}" aria-label="查看 ${escapeHtml(n.label)} 节点文档"><div class="node-head"><code>${escapeHtml(n.type)}</code><span class="node-label">${escapeHtml(n.label)}</span><span class="node-link">查看详情 →</span></div><p>${escapeHtml(n.desc)}</p></a>`,
   ).join("\n");
 
   const endpointRows = ENDPOINTS.map(
@@ -573,6 +561,9 @@ export function generateWelcomeHtml(port: number): string {
   @media (max-width: 900px) { .nodes { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 600px) { .nodes { grid-template-columns: 1fr; } }
   .node-card {
+    display: block;
+    color: inherit;
+    text-decoration: none;
     background: var(--overlay-1);
     border: 1px solid var(--border-subtle);
     border-radius: 10px;
@@ -581,6 +572,8 @@ export function generateWelcomeHtml(port: number): string {
   }
   .node-card:hover { background: var(--overlay-2); border-color: var(--border-hover); }
   .node-head { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+  .node-link { margin-left: auto; font-size: 11px; color: var(--accent); opacity: 0; transition: opacity 0.15s; }
+  .node-card:hover .node-link, .node-card:focus-visible .node-link { opacity: 1; }
   .node-head code { background: var(--brand-chip-bg); color: var(--tag-active); padding: 2px 8px; font-size: 12px; }
   .node-label { font-size: 13.5px; font-weight: 590; letter-spacing: -0.13px; color: var(--text-primary); }
   .node-card p { margin: 0; font-size: 12.5px; line-height: 1.55; letter-spacing: -0.02px; color: var(--text-muted); }
@@ -1020,31 +1013,31 @@ ${endpointRows}
       <h2>核心概念 <a class="more" href="/docs/concepts">查看完整文档 &rarr;</a></h2>
     </div>
     <div class="grid">
-      <a class="card" href="/docs/concepts#node-output">
+      <a class="card" href="/docs/concepts/node-output">
         <h3>节点输出引用</h3>
         <p>使用 <code>\${nodeId.output.path}</code> 引用前置节点的输出，支持表达式计算，如 <code>\${node1.output.price * 0.8}</code>。</p>
       </a>
-      <a class="card" href="/docs/concepts#expressions">
+      <a class="card" href="/docs/concepts/expressions">
         <h3>表达式引擎</h3>
         <p>支持数学/比较/逻辑运算与 20+ 内置函数，如 <code>\${max(a, b)}</code>、<code>\${round(price * 1.1, 2)}</code>。含运算符优先级与函数目录。</p>
       </a>
-      <a class="card" href="/docs/concepts#cas">
+      <a class="card" href="/docs/concepts/concurrency#cas">
         <h3>并发控制（CAS）</h3>
         <p>实例携带 version 字段，更新时检测版本冲突并自动重试，避免 Lost Update。</p>
       </a>
-      <a class="card" href="/docs/concepts#storage">
+      <a class="card" href="/docs/concepts/storage">
         <h3>本地文件持久化</h3>
         <p>默认使用 LocalFileStorage，数据保存在 <code>.ts-workflow-engine-data/</code>，支持重启恢复，可选 <code>FSYNC_ON_WRITE</code> 换取更强的持久性。</p>
       </a>
-      <a class="card" href="/docs/concepts#join-transform">
-        <h3>join / transform 节点</h3>
-        <p>join 等待多个并行分支完成（all/any），transform 用类型化表达式重塑节点输出，保留原生数据类型。</p>
+      <a class="card" href="/docs/concepts/fanout-join">
+        <h3>并行扇出与结果汇聚</h3>
+        <p>next 扇出并行分支、join 汇聚（all/any）、transform 整形，组合成一条无需 action 闭包的纯 JSON 数据流水线。</p>
       </a>
-      <a class="card" href="/docs/concepts#worker-pool">
+      <a class="card" href="/docs/concepts/worker-pool">
         <h3>Worker 线程池</h3>
         <p>HTTP 节点可卸载到 worker 线程执行，支持按实例粘性路由回已绑定的 worker。</p>
       </a>
-      <a class="card" href="/docs/concepts#integration">
+      <a class="card" href="/docs/concepts/embedding">
         <h3>外部集成增强</h3>
         <p><code>createWorkflowRouter()</code> 挂载到宿主 Express 应用，具名错误类支持 <code>instanceof</code> 判断。</p>
       </a>
@@ -1085,7 +1078,7 @@ ${endpointRows}
     </div>
   </section>
 </main>
-<footer>ts-workflow-engine-lite v3.0.0</footer>
+<footer>ts-workflow-engine-lite v3.0.1</footer>
 <button type="button" id="themeToggle" class="theme-toggle" aria-label="切换亮暗主题" title="切换亮暗主题">
   <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
   <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>

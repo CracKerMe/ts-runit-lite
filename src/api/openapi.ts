@@ -109,6 +109,7 @@ export const openApiSpec = {
                   tags: {
                     type: "array",
                     items: { type: "string" },
+                    description: "工作流标签，用于分类与检索。",
                   },
                   overwrite: {
                     type: "boolean",
@@ -203,6 +204,7 @@ export const openApiSpec = {
                   tags: {
                     type: "array",
                     items: { type: "string" },
+                    description: "工作流标签，用于分类与检索。",
                   },
                   overwrite: {
                     type: "boolean",
@@ -598,8 +600,15 @@ export const openApiSpec = {
                 type: "object",
                 required: ["name"],
                 properties: {
-                  name: { type: "string" },
-                  payload: {},
+                  name: {
+                    type: "string",
+                    description:
+                      "Signal/Query 名称，需与工作流中注册的处理器一致。",
+                  },
+                  payload: {
+                    description:
+                      "随 Signal/Query 传入的数据，任意 JSON 可序列化结构。",
+                  },
                 },
               },
             },
@@ -637,8 +646,15 @@ export const openApiSpec = {
                 type: "object",
                 required: ["name"],
                 properties: {
-                  name: { type: "string" },
-                  payload: {},
+                  name: {
+                    type: "string",
+                    description:
+                      "Signal/Query 名称，需与工作流中注册的处理器一致。",
+                  },
+                  payload: {
+                    description:
+                      "随 Signal/Query 传入的数据，任意 JSON 可序列化结构。",
+                  },
                 },
               },
             },
@@ -676,9 +692,19 @@ export const openApiSpec = {
                 type: "object",
                 required: ["name"],
                 properties: {
-                  name: { type: "string" },
-                  payload: {},
-                  correlationId: { type: "string" },
+                  name: {
+                    type: "string",
+                    description: "Update 名称，需与工作流中注册的处理器一致。",
+                  },
+                  payload: {
+                    description:
+                      "随 Update 传入的数据，任意 JSON 可序列化结构。",
+                  },
+                  correlationId: {
+                    type: "string",
+                    description:
+                      "幂等关联 ID。重复提交相同 correlationId 时返回首次结果，不会重复执行。",
+                  },
                 },
               },
             },
@@ -928,13 +954,27 @@ export const openApiSpec = {
               schema: {
                 type: "object",
                 properties: {
-                  webhookId: { type: "string" },
-                  event: { type: "string" },
-                  workflowId: { type: "string" },
-                  instanceId: { type: "string" },
+                  webhookId: {
+                    type: "string",
+                    description: "只重试该 Webhook 的投递。",
+                  },
+                  event: {
+                    type: "string",
+                    description: "只重试该事件名的投递。",
+                  },
+                  workflowId: {
+                    type: "string",
+                    description: "只重试该工作流产生的投递。",
+                  },
+                  instanceId: {
+                    type: "string",
+                    description: "只重试该实例产生的投递。",
+                  },
                   status: {
                     type: "string",
                     enum: ["failed", "dead_lettered"],
+                    description:
+                      "只重试处于该状态的投递。全部条件缺省时重试所有失败投递。",
                   },
                 },
               },
@@ -1245,10 +1285,19 @@ export const openApiSpec = {
                 type: "object",
                 required: ["id", "workflowId", "metric", "threshold"],
                 properties: {
-                  id: { type: "string" },
-                  workflowId: { type: "string" },
-                  metric: { type: "string" },
-                  threshold: { type: "number" },
+                  id: { type: "string", description: "SLA 规则的唯一标识。" },
+                  workflowId: {
+                    type: "string",
+                    description: "该规则约束的工作流 ID。",
+                  },
+                  metric: {
+                    type: "string",
+                    description: "被监控的指标名，如执行时长、失败率。",
+                  },
+                  threshold: {
+                    type: "number",
+                    description: "触发违规的阈值，超过即记一次 SLA 违规。",
+                  },
                 },
               },
             },
@@ -1566,29 +1615,48 @@ export const openApiSpec = {
     schemas: {
       ApiSuccessResponse: {
         type: "object",
+        description: "所有成功响应共用的信封结构，业务数据在 data 字段内。",
         required: ["code", "message", "data", "timestamp"],
         properties: {
           code: {
+            description: "业务状态码，成功恒为 0（与 HTTP 状态码相互独立）。",
             oneOf: [
               { type: "number", enum: [0] },
               { type: "string", enum: ["0"] },
             ],
           },
-          message: { type: "string" },
-          data: { type: "object" },
-          timestamp: { type: "string", format: "date-time" },
+          message: { type: "string", description: "可读的结果描述。" },
+          data: {
+            type: "object",
+            description: "业务数据，具体形状随端点而定，见各端点的响应示例。",
+          },
+          timestamp: {
+            type: "string",
+            format: "date-time",
+            description: "服务端生成响应的时刻（ISO 8601）。",
+          },
         },
       },
       ApiErrorResponse: {
         type: "object",
+        description: "所有失败响应共用的信封结构。",
         required: ["code", "message", "timestamp"],
         properties: {
-          code: { oneOf: [{ type: "number" }, { type: "string" }] },
-          message: { type: "string" },
+          code: {
+            description:
+              "业务错误码，非 0。取值见 ErrorCode（src/api/ErrorHandler.ts）。",
+            oneOf: [{ type: "number" }, { type: "string" }],
+          },
+          message: { type: "string", description: "可读的错误描述。" },
           error: {
+            description: "错误详情，可能是结构化对象、字符串或 null。",
             oneOf: [{ type: "object" }, { type: "string" }, { type: "null" }],
           },
-          timestamp: { type: "string", format: "date-time" },
+          timestamp: {
+            type: "string",
+            format: "date-time",
+            description: "服务端生成响应的时刻（ISO 8601）。",
+          },
         },
       },
       ApiResponse: {
@@ -1601,11 +1669,29 @@ export const openApiSpec = {
         type: "object",
         required: ["name", "url", "events"],
         properties: {
-          name: { type: "string" },
-          url: { type: "string", format: "uri" },
-          events: { type: "array", items: { type: "string" } },
-          headers: { type: "object" },
-          secret: { type: "string" },
+          name: {
+            type: "string",
+            description: "Webhook 名称，便于在列表中识别。",
+          },
+          url: {
+            type: "string",
+            format: "uri",
+            description: "接收投递的目标地址，需可从引擎所在网络访问。",
+          },
+          events: {
+            type: "array",
+            items: { type: "string" },
+            description: "订阅的事件名列表，至少一个。",
+          },
+          headers: {
+            type: "object",
+            description:
+              "投递时附加的自定义请求头，值支持 ${secret:NAME} 占位符。",
+          },
+          secret: {
+            type: "string",
+            description: "签名密钥，用于让接收方校验投递来源。",
+          },
         },
       },
       // WorkflowDefinition, TaskNode, and every per-node-type NodeConfig

@@ -5,7 +5,7 @@
 ## 项目信息
 
 **项目名**: ts-workflow-engine-lite  
-**版本**: 3.0.0（2026 年 9 月）  
+**版本**: 3.0.1（2026 年 9 月）  
 **类型**: 轻量级 TypeScript 工作流引擎，面向单进程嵌入式场景  
 **语言**: TypeScript + Express v5  
 **包管理**: pnpm
@@ -453,6 +453,6 @@ curl http://localhost:3345/workflow-api/v1/workflows
 ## 最后更新
 
 - **日期**: 2026-09-17
-- **版本**: 3.0.0
+- **版本**: 3.0.1
 - **维护者**: Sario
 - **许可证**: MIT

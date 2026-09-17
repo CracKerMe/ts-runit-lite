@@ -701,7 +701,10 @@ export class WorkflowEngine {
       options.targetVersion,
     );
     if (!workflow) {
-      throw new WorkflowNotFoundError(instance.workflowId, options.targetVersion);
+      throw new WorkflowNotFoundError(
+        instance.workflowId,
+        options.targetVersion,
+      );
     }
 
     const fromVersion = instance.workflowVersion;

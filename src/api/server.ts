@@ -25,8 +25,13 @@ import {
   verifyWsToken,
 } from "./middleware/auth";
 import { initRateLimiter, rateLimitMiddleware } from "./middleware/rateLimit";
-import { generateConceptsDocHtml } from "./docsPage";
-import { generateApiDocsHtml, openApiSpec } from "./openapi";
+import {
+  generateConceptDocHtml,
+  generateConceptIndexHtml,
+} from "./docs/conceptPages";
+import { openApiSpec } from "./openapi";
+import { generateApiEndpointHtml, generateApiIndexHtml } from "./docs/apiPages";
+import { generateNodeDocHtml, generateNodeIndexHtml } from "./docs/nodePages";
 import { generatePlaygroundHtml } from "./playgroundPage";
 import { generateWelcomeHtml } from "./welcomePage";
 import { normalizeApiResponse } from "./response";
@@ -322,9 +327,20 @@ export async function startApiServer(
       res.send(generateWelcomeHtml(port));
     });
 
+    // 核心概念（与节点页/端点页共用渲染器，按主题分页）
     app.get("/docs/concepts", (_req, res) => {
       res.setHeader("Content-Type", "text/html");
-      res.send(generateConceptsDocHtml(port));
+      res.send(generateConceptIndexHtml());
+    });
+
+    app.get("/docs/concepts/:topic", (req, res, next) => {
+      const html = generateConceptDocHtml(req.params.topic);
+      if (!html) {
+        next();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
     });
 
     app.get("/playground", (_req, res) => {
@@ -332,13 +348,40 @@ export async function startApiServer(
       res.send(generatePlaygroundHtml(port));
     });
 
+    // 节点参考（Dify 式逐参数版式，结构由 WorkflowSchema 生成）
+    app.get("/docs/nodes", (_req, res) => {
+      res.setHeader("Content-Type", "text/html");
+      res.send(generateNodeIndexHtml());
+    });
+
+    app.get("/docs/nodes/:type", (req, res, next) => {
+      const html = generateNodeDocHtml(req.params.type);
+      if (!html) {
+        next();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
+    });
+
+    // REST 端点参考（同一渲染器，数据源为 openApiSpec）
     app.get("/api-docs", (_req, res) => {
       res.setHeader("Content-Type", "text/html");
-      res.send(generateApiDocsHtml());
+      res.send(generateApiIndexHtml());
     });
 
     app.get("/api-docs/openapi.json", (_req, res) => {
       res.json(openApiSpec);
+    });
+
+    app.get("/api-docs/:slug", (req, res, next) => {
+      const html = generateApiEndpointHtml(req.params.slug);
+      if (!html) {
+        next();
+        return;
+      }
+      res.setHeader("Content-Type", "text/html");
+      res.send(html);
     });
 
     // 404 处理
