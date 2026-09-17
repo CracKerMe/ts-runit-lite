@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { StickyExecutionManager } from "../../../engine/StickyExecutionManager";
+import { StickyExecutionPolicy } from "../../../engine/StickyExecutionPolicy";
 import { WorkerPool } from "../../../engine/worker/WorkerPool";
 
 /**
@@ -8,7 +8,7 @@ import { WorkerPool } from "../../../engine/worker/WorkerPool";
  */
 describe("WorkerPool sticky affinity", () => {
   let pool: WorkerPool;
-  let sticky: StickyExecutionManager;
+  let sticky: StickyExecutionPolicy;
 
   const httpTask = (instanceId: string, nodeId: string, url: string) => ({
     type: "execute" as const,
@@ -24,7 +24,7 @@ describe("WorkerPool sticky affinity", () => {
   });
 
   beforeEach(() => {
-    sticky = new StickyExecutionManager();
+    sticky = new StickyExecutionPolicy();
     sticky.setOptions({ enabled: true, cacheSize: 10, ttlMs: 60_000 });
     pool = new WorkerPool(
       {

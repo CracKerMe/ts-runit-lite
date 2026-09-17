@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { StickyExecutionManager } from "../../engine/StickyExecutionManager";
+import { StickyExecutionPolicy } from "../../engine/StickyExecutionPolicy";
 
-describe("StickyExecutionManager", () => {
-  let manager: StickyExecutionManager;
+describe("StickyExecutionPolicy", () => {
+  let manager: StickyExecutionPolicy;
 
   beforeEach(() => {
-    manager = new StickyExecutionManager();
+    manager = new StickyExecutionPolicy();
     manager.setOptions({ enabled: true, cacheSize: 3, ttlMs: 60_000 });
   });
 

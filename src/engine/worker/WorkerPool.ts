@@ -4,9 +4,9 @@ import { fileURLToPath } from "node:url";
 import { Worker } from "node:worker_threads";
 import { Logger } from "../../utils/Logger";
 import {
-  StickyExecutionManager,
-  stickyExecutionManager,
-} from "../StickyExecutionManager";
+  StickyExecutionPolicy,
+  stickyExecutionPolicy,
+} from "../StickyExecutionPolicy";
 import {
   type ExecuteTaskMessage,
   isTaskErrorMessage,
@@ -46,14 +46,14 @@ export class WorkerPool extends EventEmitter {
   private readonly taskQueue: QueuedTask[] = [];
   private readonly pendingTasks = new Map<string, QueuedTask>();
   private readonly idleTimer: NodeJS.Timeout;
-  private readonly sticky: StickyExecutionManager;
+  private readonly sticky: StickyExecutionPolicy;
   private shuttingDown = false;
   private workerSequence = 0;
 
-  constructor(config: WorkerPoolConfig, sticky?: StickyExecutionManager) {
+  constructor(config: WorkerPoolConfig, sticky?: StickyExecutionPolicy) {
     super();
     this.config = config;
-    this.sticky = sticky ?? stickyExecutionManager;
+    this.sticky = sticky ?? stickyExecutionPolicy;
     this.validateConfig(config);
     this.initializeWorkers();
     this.idleTimer = setInterval(

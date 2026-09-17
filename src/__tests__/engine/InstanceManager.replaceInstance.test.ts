@@ -2,7 +2,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { WorkflowInstance } from "../../model/Instance";
 import { InstanceManager } from "../../engine/InstanceManager";
-import { searchAttributeManager } from "../../engine/SearchAttributeManager";
+import { searchAttributeTracker } from "../../engine/SearchAttributeTracker";
 
 /**
  * replaceInstance 必须同步搜索索引。
@@ -39,7 +39,7 @@ describe("InstanceManager.replaceInstance", () => {
     });
     manager.replaceInstance(original);
 
-    expect(searchAttributeManager.query({ status: ["running"] })).toContain(
+    expect(searchAttributeTracker.query({ status: ["running"] })).toContain(
       "inst-1",
     );
 
@@ -51,10 +51,10 @@ describe("InstanceManager.replaceInstance", () => {
 
     expect(manager.getInstance("inst-1")?.status).toBe("paused");
     // 索引必须跟着走——这正是直接写 Map 会漏掉的部分
-    expect(searchAttributeManager.query({ status: ["paused"] })).toContain(
+    expect(searchAttributeTracker.query({ status: ["paused"] })).toContain(
       "inst-1",
     );
-    expect(searchAttributeManager.query({ status: ["running"] })).not.toContain(
+    expect(searchAttributeTracker.query({ status: ["running"] })).not.toContain(
       "inst-1",
     );
   });
@@ -74,10 +74,10 @@ describe("InstanceManager.replaceInstance", () => {
     );
 
     expect(
-      searchAttributeManager.query({ attributes: { region: "eu-west" } }),
+      searchAttributeTracker.query({ attributes: { region: "eu-west" } }),
     ).toContain("inst-2");
     expect(
-      searchAttributeManager.query({ attributes: { region: "us-east" } }),
+      searchAttributeTracker.query({ attributes: { region: "us-east" } }),
     ).not.toContain("inst-2");
   });
 });

@@ -20,7 +20,7 @@ export async function createEngine(
 ): Promise<WorkflowEngine> {
   const container = getContainer();
   if (!container) {
-    throw new Error("Container not initialized. Call createContainer() first.");
+    throw new Error("Container not initialized. Call bootstrap() first.");
   }
 
   Logger.info("system", "engine", "Creating WorkflowEngine");
@@ -41,13 +41,4 @@ export async function createEngine(
 
   await engine.initialize();
   return engine;
-}
-
-/**
- * 快速创建 V2 引擎（推荐）
- */
-export async function createEngineV2(
-  options: CreateEngineOptions = {},
-): Promise<WorkflowEngine> {
-  return createEngine(options);
 }

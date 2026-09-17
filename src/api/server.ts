@@ -632,6 +632,3 @@ export async function startApiServer(
     throw error;
   }
 }
-
-// 保持向后兼容的导出
-export { startApiServer as startServer };

@@ -1,17 +1,17 @@
 // oxlint-disable no-explicit-any -- test/example file uses dynamic types
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  configureHeartbeatManager,
-  HeartbeatManager,
+  configureHeartbeatTracker,
+  HeartbeatTracker,
   type HeartbeatOptions,
-  heartbeatManager,
-} from "../../engine/HeartbeatManager";
+  heartbeatTracker,
+} from "../../engine/HeartbeatTracker";
 
-describe("HeartbeatManager", () => {
-  let manager: HeartbeatManager;
+describe("HeartbeatTracker", () => {
+  let manager: HeartbeatTracker;
 
   beforeEach(() => {
-    manager = new HeartbeatManager();
+    manager = new HeartbeatTracker();
     vi.useFakeTimers();
   });
 
@@ -181,23 +181,23 @@ describe("HeartbeatManager", () => {
     });
   });
 
-  describe("configureHeartbeatManager", () => {
+  describe("configureHeartbeatTracker", () => {
     it("should configure the shared heartbeat manager with injected storage", async () => {
       const saveHeartbeat = vi.fn().mockResolvedValue(undefined);
-      const shared = configureHeartbeatManager({
+      const shared = configureHeartbeatTracker({
         saveHeartbeat,
       } as any);
 
-      expect(shared).toBe(heartbeatManager);
+      expect(shared).toBe(heartbeatTracker);
 
-      await heartbeatManager.start({
+      await heartbeatTracker.start({
         instanceId: "shared-instance",
         nodeId: "shared-node",
         interval: 1000,
       });
 
       expect(saveHeartbeat).toHaveBeenCalled();
-      heartbeatManager.stop("shared-instance", "shared-node");
+      heartbeatTracker.stop("shared-instance", "shared-node");
     });
   });
 });

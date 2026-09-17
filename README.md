@@ -5,10 +5,13 @@ applications. It includes workflow execution, a REST API, events, Cron
 scheduling, retries, and local file persistence. Redis and databases are not
 required for local use.
 
+> The npm package is `ts-workflow-engine-lite`; the GitHub repository is
+> named `ts-runit-lite` for historical reasons and is kept as-is to preserve
+> existing links, stars, and forks.
+
 Project landing page: **[Live Landing Page](https://crackerme.github.io/ts-runit-lite/)** for a visual
 overview of the engine (animated DAG execution, instance lifecycle, and examples). It also works
 offline: open [`index.html`](./index.html) in a browser.
-
 
 ## Install
 
@@ -24,7 +27,7 @@ The package is published as an ES module. Use ESM imports from JavaScript or
 TypeScript:
 
 ```js
-import { bootstrap, destroyContainer } from "ts-workflow-engine-lite";
+import { bootstrap } from "ts-workflow-engine-lite";
 ```
 
 TypeScript consumers can use either `moduleResolution: "NodeNext"` or
@@ -91,18 +94,16 @@ try {
 
 ### Which initialization API should I use?
 
-The package exposes two ways to get a running `WorkflowEngineV2`:
+The package exposes two ways to get a running `WorkflowEngine`:
 
-| API                                                                              | Use when                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `bootstrap(options)`                                                             | **Default choice.** One call wires storage, secret manager, optional worker pool and archiving, and graceful shutdown, then returns `{ engine, container }`. Matches what the CLI and the quick start above use.                                                                                                                                                                                                          |
-| `createContainer(options)` + `setContainer(container)` + `createEngine(options)` | You need finer control over initialization order (e.g. registering workflows or a custom `SecretManager` between container and engine creation), or you're composing multiple engines against containers you manage yourself. `createEngine()` reads its container from the process-wide singleton set by `setContainer()` — call `createContainer` and `setContainer` first, or it throws `"Container not initialized"`. |
+| API                     | Use when                                                                                                                                                                                                                                        |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bootstrap(options)`    | **Default choice.** One call wires storage, secret manager, optional worker pool and archiving, and graceful shutdown, then returns `{ engine, container }`. Matches what the CLI and the quick start above use.                                |
+| `createEngine(options)` | You've already called `bootstrap()` once in this process and want a second engine sharing that same process-wide container (e.g. running two workflow sets side by side). Throws `"Container not initialized"` if `bootstrap()` hasn't run yet. |
 
-`bootstrap()` also calls `setContainer(container)` internally, so its
-returned `container` is the same process-wide singleton `createEngine()`
-reads from — you can still call `createEngine()` again afterwards (e.g. to
-create a second engine sharing that container) without calling
-`setContainer` yourself.
+`createContainer` / `setContainer` / `getContainer` are internal wiring used
+by `bootstrap()` and are not exported from the package — the process
+container can only be created through `bootstrap()`.
 
 ## Run the examples
 
@@ -182,6 +183,39 @@ or change it later with `Logger.setLevel()`.
 | -------- | ------------------------------------- | ---------------- |
 | `file`   | Default single-process runtime        | Yes              |
 | `memory` | Tests and intentionally ephemeral use | No               |
+
+Optional `sqlite` and `postgres` adapters are also registered by
+`registerBuiltinStorageAdapters()`
+([`src/storage/database-adapters.ts`](./src/storage/database-adapters.ts)).
+They keep state in memory and periodically persist a single full-state
+snapshot to a `better-sqlite3` file or a Postgres table, rather than the
+per-record files `file` mode uses — a simpler durability model, useful mainly
+when you already operate that database and want state to live there instead
+of on local disk. They require the optional `better-sqlite3` or `pg`
+dependency and, for Postgres, a `connectionString` (or `POSTGRES_STORAGE_URL`).
+To plug in a different backend entirely, implement the capability interfaces
+in [`src/storage/StorageProvider.ts`](./src/storage/StorageProvider.ts) and
+register it with `registerStorageAdapter()`.
+
+Cross-cutting concerns (timing, caching) can wrap any `StorageProvider`
+without touching the underlying adapter:
+
+```ts
+import { withStorageCache, withStorageMetrics } from "ts-workflow-engine-lite";
+
+let storage = await createStorage();
+storage = withStorageMetrics(storage, (method, durationMs) => {
+  metrics.record(`storage.${method}`, durationMs);
+});
+storage = withStorageCache(storage, { ttlMs: 5000 });
+```
+
+Both wrap the provider with a `Proxy`, so they forward every method
+(including ones added to `StorageProvider` later) without needing their own
+copy of the interface. `withStorageCache` is a single-process read cache for
+`loadInstance`/`loadWorkflow` by default — not safe to share across
+multiple processes pointed at the same storage backend, since it has no
+cross-process invalidation signal.
 
 Local file persistence is enabled by default outside tests. Runtime state is
 stored below `.ts-workflow-engine-data/` using one JSON file per record and atomic temp
@@ -407,14 +441,59 @@ to share one transactional database. It is a better fit when multiple
 processes must coordinate through Postgres; it is less attractive when a
 single embedded service and local files are the desired deployment boundary.
 
-| Requirement                                                    | Best fit                  |
-| -------------------------------------------------------------- | ------------------------- |
-| Embedded, single-process, low operational overhead             | `ts-workflow-engine-lite` |
-| Distributed workers, long-lived timers, workflow-as-a-platform | Temporal                  |
-| Postgres-native coordination and transactional state           | pg-workflows              |
+If your instance count or per-instance node history keeps growing well beyond
+what a single process comfortably scans and persists, don't fight the default
+storage — either register a
+[custom storage adapter](#storage-modes) backed by a database you already
+operate, or move to one of the platforms above. The engine also does not
+provide database-level tenant isolation or authorization on its own; see
+[Multi-tenant usage pattern](#multi-tenant-usage-pattern) for what you still
+need to enforce at the application boundary.
+
+| Requirement                                                    | Best fit                                                     |
+| -------------------------------------------------------------- | ------------------------------------------------------------ |
+| Embedded, single-process, low operational overhead             | `ts-workflow-engine-lite`                                    |
+| Distributed workers, long-lived timers, workflow-as-a-platform | Temporal                                                     |
+| Postgres-native coordination and transactional state           | pg-workflows                                                 |
+| Very large instance counts / long node histories, single host  | Custom storage adapter (see [Storage modes](#storage-modes)) |
 
 The key boundary is not “how many node types are available”; it is the
 durability and coordination model your workflow requires.
+
+## Testing your workflows
+
+`testWorkflow()` runs a workflow definition against a throwaway in-memory
+engine and mocks out non-`action` nodes (`http`, `sql`, `queue`, etc.) so
+tests don't need real integrations:
+
+```ts
+import { testWorkflow } from "ts-workflow-engine-lite";
+
+const result = await testWorkflow(workflow, {
+  mockNodes: { "llm-draft": { content: "mocked reply" } },
+});
+
+result.expectCompleted().expectOutput("finalize", { approved: true });
+
+await result.cleanup();
+```
+
+`MutationTester` mutates a workflow definition (deleting nodes, negating
+conditions, corrupting config, zeroing timeouts, ...) and reports which
+mutations your workflow's own error handling and validation actually catch,
+surfacing weak spots — missing `failureNext`, unchecked conditions — that a
+happy-path test would miss:
+
+```ts
+import { MutationTester } from "ts-workflow-engine-lite";
+
+const report = await new MutationTester().runMutations(workflow);
+console.log(`${report.killed}/${report.totalMutations} mutations caught`);
+```
+
+Both are exported from the package root; see
+[`src/__tests__/testing/`](./src/__tests__/testing/) for further usage
+patterns.
 
 ## Development scripts
 
@@ -470,6 +549,7 @@ are not installed.
 | [event-timeout-workflow.ts](./examples/event-timeout-workflow.ts) | `pnpm example event-timeout-workflow` | Event waiting, timeout and rollback paths        |
 | [instance-control-api.ts](./examples/instance-control-api.ts)     | `pnpm example instance-control-api`   | Retry / skip / compensate instance control API   |
 | [output-injection.ts](./examples/output-injection.ts)             | `pnpm example output-injection`       | Referencing upstream node output via ${...}      |
+| [llm-approval-workflow.ts](./examples/llm-approval-workflow.ts)   | `pnpm example llm-approval-workflow`  | LLM draft, human approval, timeout fallback      |
 
 ## License
 

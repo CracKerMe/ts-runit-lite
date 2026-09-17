@@ -14,7 +14,10 @@ import type {
   EventWaitingState,
   HeartbeatState,
   InstanceMetrics,
+  InstanceQueryParams,
+  EventQueryParams,
   NodeMetrics,
+  StorageProvider,
   StoredWorkflow,
   StoredWorkflowVersion,
 } from "./StorageProvider";
@@ -96,7 +99,7 @@ const ORPHAN_SWEEP_INTERVAL_MS = 60 * 60 * 1000;
  *    MetricsAggregator；而它占了每节点 3 次写入中的 2 次，fsync 它等于
  *    让每个节点执行都为没人需要的持久性买单（实测 fsync 下整个节点循环
  *    从 1,400 ops/s 掉到 35 ops/s）；
- *  - heartbeat 本就被明确定义为恢复提示而非事务状态（见 HeartbeatManager
+ *  - heartbeat 本就被明确定义为恢复提示而非事务状态（见 HeartbeatTracker
  *    的注释），且已被去抖到每 10s 一次。
  *
  * `events` **保留** fsync：它是用户可见的审计历史，默认把它降级为
@@ -118,10 +121,13 @@ const DEFAULT_FSYNC_COLLECTIONS: readonly Collection[] = [
 /**
  * Durable single-process storage backed by one JSON file per record.
  *
- * MemoryStorage remains the hot index and query implementation. Files are the
- * recovery boundary: every mutation is written through a temp file and then
- * atomically renamed into place. This is intentionally not a distributed
- * store, but it protects workflow state from ordinary process restarts.
+ * This class implements `StorageProvider` directly and holds a private
+ * `MemoryStorage` instance as its query layer (composition, not
+ * inheritance). MemoryStorage remains the hot index and query
+ * implementation. Files are the recovery boundary: every mutation is
+ * written through a temp file and then atomically renamed into place. This
+ * is intentionally not a distributed store, but it protects workflow state
+ * from ordinary process restarts.
  *
  * By default writes are NOT fsync'd: the rename is atomic (readers never see
  * a half-written file), but the bytes can still live only in the page cache
@@ -129,9 +135,38 @@ const DEFAULT_FSYNC_COLLECTIONS: readonly Collection[] = [
  * the most recent writes even though callers already observed them succeed.
  * Pass `fsyncOnWrite: true` (or `FSYNC_ON_WRITE=true`, see AppConfig) to
  * trade write latency for surviving host-level failures too.
+ *
+ * ## Composition, not inheritance
+ *
+ * `LocalFileStorage` used to `extends MemoryStorage`. It is now a standalone
+ * class that holds a private `MemoryStorage` (`this.memory`) as its query
+ * layer and delegates every read/write to it. Three things this relies on:
+ *
+ *  - All in-memory reads/writes go through `this.memory`'s public methods
+ *    (`saveInstance`, `queryInstances`, etc.) — there is no second Map of
+ *    instances held here, so there is exactly one source of truth for what's
+ *    "in memory".
+ *  - The persistence path needs the already-cloned value that `MemoryStorage`
+ *    just stored (to avoid a second deep clone before writing to disk), and
+ *    a pre-mutation snapshot to roll back to on disk-write failure. Since
+ *    `this.memory` is a concrete `MemoryStorage` (not the `StorageProvider`
+ *    interface type), `LocalFileStorage` can call `MemoryStorage`-specific,
+ *    non-interface methods such as `saveInstanceAndPeek` /
+ *    `casUpdateInstanceAndPeek` / `saveHeartbeatAndPeek` /
+ *    `updateNodeMetricsAndPeek` that return the stored clone directly. These
+ *    are deliberately NOT part of `StorageProvider` — returning a live,
+ *    mutable reference through the public interface would let engine code
+ *    mutate an instance before CAS validation, corrupting in-memory state.
+ *  - Cleanup receipts (`lastCleanedEventIds` etc.) used to be `protected`
+ *    fields LocalFileStorage read directly as a subclass. They're now
+ *    surfaced as return values via `cleanupStaleEventsWithIds` /
+ *    `cleanupExpiredHeartbeatsWithIds` / `cleanupStaleInstancesWithIds` —
+ *    again concrete `MemoryStorage` methods outside `StorageProvider`.
  */
-export class LocalFileStorage extends MemoryStorage {
+export class LocalFileStorage implements StorageProvider {
   readonly directory: string;
+  /** 内存查询层：组合而非继承，是本实例状态的唯一来源。 */
+  private readonly memory: MemoryStorage;
   private readonly directories: Record<Collection, string>;
   private readonly fsyncOnWrite: boolean;
   /** fsyncOnWrite 实际生效的集合，见 {@link DEFAULT_FSYNC_COLLECTIONS}。 */
@@ -173,7 +208,7 @@ export class LocalFileStorage extends MemoryStorage {
   private connected = false;
 
   constructor(options: LocalFileStorageOptions | string) {
-    super();
+    this.memory = new MemoryStorage();
     this.directory = typeof options === "string" ? options : options.directory;
     this.fsyncOnWrite =
       typeof options === "string" ? false : (options.fsyncOnWrite ?? false);
@@ -197,7 +232,7 @@ export class LocalFileStorage extends MemoryStorage {
     };
   }
 
-  override async connect(): Promise<void> {
+  async connect(): Promise<void> {
     for (const directory of Object.values(this.directories)) {
       await fs.promises.mkdir(directory, { recursive: true });
       await fs.promises.mkdir(path.join(directory, "corrupt"), {
@@ -205,41 +240,41 @@ export class LocalFileStorage extends MemoryStorage {
       });
     }
 
-    await super.connect();
+    await this.memory.connect();
 
     // instances 先恢复：updateNodeMetrics 会从实例里推导 workflowId，
     // 恢复路径虽然走的是 saveInstanceMetrics 不触及那一步，但保持这个
     // 顺序可以免去一个隐含的依赖。
     await this.restoreCollection("instances", async (id, value) =>
-      super.saveInstance(this.restoreInstance(value, id)),
+      this.memory.saveInstance(this.restoreInstance(value, id)),
     );
 
     // 其余集合写入互不相交的内存 Map，可以并行恢复。此前它们是 11 次
     // 串行 await，几万条记录时 connect() 本身就会成为可用规模的天花板。
     await Promise.all([
       this.restoreCollection("workflows", async (_id, value) =>
-        super.saveWorkflow(value as WorkflowDefinition),
+        this.memory.saveWorkflow(value as WorkflowDefinition),
       ),
       this.restoreCollection("workflow-metadata", async (_id, value) =>
-        super.saveWorkflowWithMetadata(value as StoredWorkflow),
+        this.memory.saveWorkflowWithMetadata(value as StoredWorkflow),
       ),
       // workflow-versions 的回放必须串行：saveWorkflowVersion 对嵌套 Map
       // 做读-改-写，并发会丢版本。
       this.restoreCollection(
         "workflow-versions",
         async (_id, value) =>
-          super.saveWorkflowVersion(value as StoredWorkflowVersion),
+          this.memory.saveWorkflowVersion(value as StoredWorkflowVersion),
         true,
       ),
       this.restoreCollection("waiting", async (_id, value) =>
-        super.saveEventWaitingState(value as EventWaitingState),
+        this.memory.saveEventWaitingState(value as EventWaitingState),
       ),
       this.restoreMetrics(),
       this.restoreCollection("events", async (_id, value) =>
-        super.saveEvent(this.restoreEvent(value as EventRecord)),
+        this.memory.saveEvent(this.restoreEvent(value as EventRecord)),
       ),
       this.restoreCollection("heartbeats", async (_id, value) =>
-        super.saveHeartbeat(value as HeartbeatState),
+        this.memory.saveHeartbeat(value as HeartbeatState),
       ),
       this.restoreCollection("dlq", async (id, value) => {
         this.deadLetterEntries.set(id, value);
@@ -259,63 +294,74 @@ export class LocalFileStorage extends MemoryStorage {
     );
   }
 
-  override async saveInstance(instance: WorkflowInstance): Promise<void> {
-    // peekInstance 借用存储中的引用而不是再克隆一份：Map 条目永远整体
-    // 替换，所以这份引用是一个稳定的"写入前"快照。回滚路径 super.saveInstance
-    // 会在写回时重新深拷贝，因此调用方之后修改自己的对象也污染不到它。
-    const previous = this.peekInstance(instance.instanceId);
-    await super.saveInstance(instance);
+  async saveInstance(instance: WorkflowInstance): Promise<void> {
+    // 借用 MemoryStorage 写入后返回的那份引用当"写入前"快照的对照，
+    // 以及待写入磁盘的值——省掉持久化路径里额外的 loadInstance 深拷贝。
+    // 详见 MemoryStorage.saveInstanceAndPeek 的可见性警告。
+    const previous = this.memory.getInstanceRef(instance.instanceId);
+    const stored = await this.memory.saveInstanceAndPeek(instance);
     await this.persistOrRollback(
       "instances",
       instance.instanceId,
-      // 存完直接借用 Map 里的那份 clone，省掉第二次 loadInstance。
-      this.peekInstance(instance.instanceId),
+      stored,
       async () => {
-        if (previous) await super.saveInstance(previous);
-        else await super.deleteInstance(instance.instanceId);
+        if (previous) await this.memory.saveInstance(previous);
+        else await this.memory.deleteInstance(instance.instanceId);
       },
     );
   }
 
-  override async casUpdateInstance(
-    instance: WorkflowInstance,
-  ): Promise<boolean> {
-    const previous = this.peekInstance(instance.instanceId);
-    const updated = await super.casUpdateInstance(instance);
+  async casUpdateInstance(instance: WorkflowInstance): Promise<boolean> {
+    const previous = this.memory.getInstanceRef(instance.instanceId);
+    const { updated, stored } =
+      await this.memory.casUpdateInstanceAndPeek(instance);
     if (updated) {
       await this.persistOrRollback(
         "instances",
         instance.instanceId,
-        // CAS 成功后 Map 里就是刚写入的新版本，直接借用，不再 load 一次。
-        this.peekInstance(instance.instanceId),
+        stored,
         async () => {
-          // The CAS already committed the new version in memory (super
+          // The CAS already committed the new version in memory (this.memory
           // mutates its Map synchronously); if the disk write fails, force
           // the in-memory copy back to the pre-CAS value so a live read and
           // a restart-recovered read can't permanently disagree.
-          if (previous) await super.saveInstance(previous);
+          if (previous) await this.memory.saveInstance(previous);
         },
       );
     }
     return updated;
   }
 
-  override async deleteInstance(instanceId: string): Promise<void> {
-    await super.deleteInstance(instanceId);
+  async loadInstance(instanceId: string): Promise<WorkflowInstance | null> {
+    return this.memory.loadInstance(instanceId);
+  }
+
+  async deleteInstance(instanceId: string): Promise<void> {
+    await this.memory.deleteInstance(instanceId);
     await this.removeFile("instances", instanceId);
   }
 
-  override async saveWorkflow(workflow: WorkflowDefinition): Promise<void> {
-    const previous = await super.loadWorkflow(workflow.id);
-    await super.saveWorkflow(workflow);
+  async listInstances(): Promise<string[]> {
+    return this.memory.listInstances();
+  }
+
+  async queryInstances(
+    params: InstanceQueryParams,
+  ): Promise<{ instances: WorkflowInstance[]; total: number }> {
+    return this.memory.queryInstances(params);
+  }
+
+  async saveWorkflow(workflow: WorkflowDefinition): Promise<void> {
+    const previous = await this.memory.loadWorkflow(workflow.id);
+    await this.memory.saveWorkflow(workflow);
     if (this.isJsonSerializable(workflow)) {
       await this.persistOrRollback(
         "workflows",
         workflow.id,
         workflow,
         async () => {
-          if (previous) await super.saveWorkflow(previous);
-          else await super.deleteWorkflow(workflow.id);
+          if (previous) await this.memory.saveWorkflow(previous);
+          else await this.memory.deleteWorkflow(workflow.id);
         },
       );
     } else {
@@ -327,8 +373,16 @@ export class LocalFileStorage extends MemoryStorage {
     }
   }
 
-  override async deleteWorkflow(workflowId: string): Promise<void> {
-    await super.deleteWorkflow(workflowId);
+  async loadWorkflow(workflowId: string): Promise<WorkflowDefinition | null> {
+    return this.memory.loadWorkflow(workflowId);
+  }
+
+  async listWorkflows(): Promise<string[]> {
+    return this.memory.listWorkflows();
+  }
+
+  async deleteWorkflow(workflowId: string): Promise<void> {
+    await this.memory.deleteWorkflow(workflowId);
     await this.removeFile("workflows", workflowId);
     await this.removeFile("workflow-metadata", workflowId);
     const versions = await this.listFiles("workflow-versions");
@@ -339,74 +393,105 @@ export class LocalFileStorage extends MemoryStorage {
     );
   }
 
-  override async saveEventWaitingState(
-    state: EventWaitingState,
-  ): Promise<void> {
-    const previous = await super.loadEventWaitingState(
+  async saveEventWaitingState(state: EventWaitingState): Promise<void> {
+    const previous = await this.memory.loadEventWaitingState(
       state.instanceId,
       state.nodeId,
     );
-    await super.saveEventWaitingState(state);
+    await this.memory.saveEventWaitingState(state);
     await this.persistOrRollback(
       "waiting",
       `${state.instanceId}__${state.nodeId}`,
       state,
       async () => {
-        if (previous) await super.saveEventWaitingState(previous);
+        if (previous) await this.memory.saveEventWaitingState(previous);
         else
-          await super.deleteEventWaitingState(state.instanceId, state.nodeId);
+          await this.memory.deleteEventWaitingState(
+            state.instanceId,
+            state.nodeId,
+          );
       },
     );
   }
 
-  override async deleteEventWaitingState(
+  async loadEventWaitingState(
+    instanceId: string,
+    nodeId: string,
+  ): Promise<EventWaitingState | null> {
+    return this.memory.loadEventWaitingState(instanceId, nodeId);
+  }
+
+  async loadAllEventWaitingStates(): Promise<EventWaitingState[]> {
+    return this.memory.loadAllEventWaitingStates();
+  }
+
+  async deleteEventWaitingState(
     instanceId: string,
     nodeId: string,
   ): Promise<void> {
-    await super.deleteEventWaitingState(instanceId, nodeId);
+    await this.memory.deleteEventWaitingState(instanceId, nodeId);
     await this.removeFile("waiting", `${instanceId}__${nodeId}`);
   }
 
-  override async saveWorkflowWithMetadata(
-    workflow: StoredWorkflow,
-  ): Promise<void> {
-    const previous = await super.loadWorkflowWithMetadata(workflow.id);
-    await super.saveWorkflowWithMetadata(workflow);
+  async saveWorkflowWithMetadata(workflow: StoredWorkflow): Promise<void> {
+    const previous = await this.memory.loadWorkflowWithMetadata(workflow.id);
+    await this.memory.saveWorkflowWithMetadata(workflow);
     if (this.isJsonSerializable(workflow.definition)) {
       await this.persistOrRollback(
         "workflow-metadata",
         workflow.id,
         workflow,
         async () => {
-          if (previous) await super.saveWorkflowWithMetadata(previous);
+          if (previous) await this.memory.saveWorkflowWithMetadata(previous);
         },
       );
     }
   }
 
-  override async saveWorkflowVersion(
-    version: StoredWorkflowVersion,
-  ): Promise<void> {
-    const previous = await super.loadWorkflowVersion(
+  async loadWorkflowWithMetadata(
+    workflowId: string,
+  ): Promise<StoredWorkflow | null> {
+    return this.memory.loadWorkflowWithMetadata(workflowId);
+  }
+
+  async listWorkflowsWithMetadata(): Promise<StoredWorkflow[]> {
+    return this.memory.listWorkflowsWithMetadata();
+  }
+
+  async saveWorkflowVersion(version: StoredWorkflowVersion): Promise<void> {
+    const previous = await this.memory.loadWorkflowVersion(
       version.id,
       version.version,
     );
-    await super.saveWorkflowVersion(version);
+    await this.memory.saveWorkflowVersion(version);
     if (this.isJsonSerializable(version.definition)) {
       await this.persistOrRollback(
         "workflow-versions",
         `${version.id}__${version.version}`,
         version,
         async () => {
-          if (previous) await super.saveWorkflowVersion(previous);
+          if (previous) await this.memory.saveWorkflowVersion(previous);
         },
       );
     }
   }
 
-  override async saveInstanceMetrics(metrics: InstanceMetrics): Promise<void> {
-    const previous = this.peekInstanceMetrics(metrics.instanceId);
-    await super.saveInstanceMetrics(metrics);
+  async loadWorkflowVersion(
+    workflowId: string,
+    version: number,
+  ): Promise<StoredWorkflowVersion | null> {
+    return this.memory.loadWorkflowVersion(workflowId, version);
+  }
+
+  async listWorkflowVersions(workflowId: string): Promise<number[]> {
+    return this.memory.listWorkflowVersions(workflowId);
+  }
+
+  async saveInstanceMetrics(metrics: InstanceMetrics): Promise<void> {
+    const previous = this.memory.peekInstanceMetricsForOwner(
+      metrics.instanceId,
+    );
+    await this.memory.saveInstanceMetricsAndPeek(metrics);
     // 扇出成每节点一个文件，与 updateNodeMetrics 的布局保持一致。
     // 只在恢复和测试中调用，不是热路径。
     const nodeIds = Object.keys(metrics.nodeMetrics ?? {});
@@ -417,11 +502,17 @@ export class LocalFileStorage extends MemoryStorage {
           this.nodeMetricsId(metrics.instanceId, nodeId),
           this.nodeMetricsRecord(metrics, nodeId),
           async () => {
-            if (previous) await super.saveInstanceMetrics(previous);
+            if (previous) await this.memory.saveInstanceMetrics(previous);
           },
         ),
       ),
     );
+  }
+
+  async loadInstanceMetrics(
+    instanceId: string,
+  ): Promise<InstanceMetrics | null> {
+    return this.memory.loadInstanceMetrics(instanceId);
   }
 
   /**
@@ -436,28 +527,31 @@ export class LocalFileStorage extends MemoryStorage {
    * 内存形态与公开 API 不变：MemoryStorage 仍持有完整的 InstanceMetrics，
    * loadInstanceMetrics 仍返回组装好的整份记录，只有磁盘布局变了。
    */
-  override async updateNodeMetrics(
+  async updateNodeMetrics(
     instanceId: string,
     nodeId: string,
     metrics: NodeMetrics,
   ): Promise<void> {
-    const previous = this.peekInstanceMetrics(instanceId);
-    await super.updateNodeMetrics(instanceId, nodeId, metrics);
-    const current = this.peekInstanceMetrics(instanceId);
+    const previous = this.memory.peekInstanceMetricsForOwner(instanceId);
+    const current = await this.memory.updateNodeMetricsAndPeek(
+      instanceId,
+      nodeId,
+      metrics,
+    );
     await this.persistOrRollback(
       "metrics",
       this.nodeMetricsId(instanceId, nodeId),
       current ? this.nodeMetricsRecord(current, nodeId) : undefined,
       async () => {
-        if (previous) await super.saveInstanceMetrics(previous);
-        else await super.deleteInstanceMetrics(instanceId);
+        if (previous) await this.memory.saveInstanceMetrics(previous);
+        else await this.memory.deleteInstanceMetrics(instanceId);
       },
     );
   }
 
-  override async deleteInstanceMetrics(instanceId: string): Promise<void> {
-    const existing = this.peekInstanceMetrics(instanceId);
-    await super.deleteInstanceMetrics(instanceId);
+  async deleteInstanceMetrics(instanceId: string): Promise<void> {
+    const existing = this.memory.peekInstanceMetricsForOwner(instanceId);
+    await this.memory.deleteInstanceMetrics(instanceId);
     const nodeIds = Object.keys(existing?.nodeMetrics ?? {});
     await Promise.all(
       nodeIds.map((nodeId) =>
@@ -468,79 +562,86 @@ export class LocalFileStorage extends MemoryStorage {
     await this.removeFile("metrics", instanceId);
   }
 
-  override async saveEvent(event: EventRecord): Promise<void> {
-    const previous = await super.loadEvent(event.id);
-    await super.saveEvent(event);
-    await this.persistOrRollback(
-      "events",
-      event.id,
-      await super.loadEvent(event.id),
-      async () => {
-        if (previous) await super.saveEvent(previous);
-        else await super.deleteEvent(event.id);
-      },
-    );
+  async saveEvent(event: EventRecord): Promise<void> {
+    // 借用 MemoryStorage 写入后返回的那份引用当"写入前"快照的对照，
+    // 以及待写入磁盘的值——省掉持久化路径里额外的 loadEvent 深拷贝。
+    // 详见 MemoryStorage.saveInstanceAndPeek 的可见性警告。
+    const previous = this.memory.getEventRef(event.id);
+    const stored = await this.memory.saveEventAndPeek(event);
+    await this.persistOrRollback("events", event.id, stored, async () => {
+      if (previous) await this.memory.saveEvent(previous);
+      else await this.memory.deleteEvent(event.id);
+    });
   }
 
-  override async deleteEvent(eventId: string): Promise<void> {
-    await super.deleteEvent(eventId);
+  async loadEvent(eventId: string): Promise<EventRecord | null> {
+    return this.memory.loadEvent(eventId);
+  }
+
+  async queryEvents(
+    params: EventQueryParams,
+  ): Promise<{ events: EventRecord[]; total: number }> {
+    return this.memory.queryEvents(params);
+  }
+
+  async deleteEvent(eventId: string): Promise<void> {
+    await this.memory.deleteEvent(eventId);
     await this.removeFile("events", eventId);
   }
 
-  override async saveHeartbeat(state: HeartbeatState): Promise<void> {
+  async saveHeartbeat(state: HeartbeatState): Promise<void> {
     // Map 直接按 key 取，不再 loadAllHeartbeats()——那会把系统里**每一条**
     // heartbeat 都深拷贝一遍，只为找出其中一条的前值。
-    const previous = this.peekHeartbeat(state.heartbeatKey);
-    await super.saveHeartbeat(state);
+    const previous = this.memory.getHeartbeatRef(state.heartbeatKey);
+    await this.memory.saveHeartbeatAndPeek(state);
     await this.persistOrRollback(
       "heartbeats",
       state.heartbeatKey,
       state,
       async () => {
-        if (previous) await super.saveHeartbeat(previous);
-        else await super.deleteHeartbeat(state.instanceId, state.nodeId);
+        if (previous) await this.memory.saveHeartbeat(previous);
+        else await this.memory.deleteHeartbeat(state.instanceId, state.nodeId);
       },
     );
   }
 
-  override async deleteHeartbeat(
-    instanceId: string,
-    nodeId: string,
-  ): Promise<void> {
-    await super.deleteHeartbeat(instanceId, nodeId);
+  async loadAllHeartbeats(): Promise<HeartbeatState[]> {
+    return this.memory.loadAllHeartbeats();
+  }
+
+  async deleteHeartbeat(instanceId: string, nodeId: string): Promise<void> {
+    await this.memory.deleteHeartbeat(instanceId, nodeId);
     await this.removeFile("heartbeats", `${instanceId}:${nodeId}`);
   }
 
-  override async cleanupStaleEvents(retentionDays: number): Promise<number> {
-    const deleted = await super.cleanupStaleEvents(retentionDays);
+  async cleanupStaleEvents(retentionDays: number): Promise<number> {
+    const { count, ids } =
+      await this.memory.cleanupStaleEventsWithIds(retentionDays);
     // 精确删除刚被清理掉的那些记录的文件。
     //
     // 此前这里要 queryEvents({pageSize: 1亿}) 物化并深拷贝整个事件库、
     // 排序、再和 readdir 的结果求差集——一次清理的代价与**存量**成正比，
     // 而不是与删除量成正比。孤儿文件交给下面的低频清扫兜底。
-    await this.removeFilesConcurrently("events", this.lastCleanedEventIds);
-    await this.sweepOrphans("events", (id) => this.hasEventInMemory(id));
-    return deleted;
+    await this.removeFilesConcurrently("events", ids);
+    await this.sweepOrphans("events", (id) => this.memory.hasEventInMemory(id));
+    return count;
   }
 
-  override async cleanupExpiredHeartbeats(): Promise<number> {
-    const deleted = await super.cleanupExpiredHeartbeats();
-    await this.removeFilesConcurrently(
-      "heartbeats",
-      this.lastCleanedHeartbeatKeys,
-    );
+  async cleanupExpiredHeartbeats(): Promise<number> {
+    const { count, ids } = await this.memory.cleanupExpiredHeartbeatsWithIds();
+    await this.removeFilesConcurrently("heartbeats", ids);
     await this.sweepOrphans("heartbeats", (id) =>
-      this.hasHeartbeatFileKeyInMemory(id),
+      this.memory.hasHeartbeatFileKeyInMemory(id),
     );
-    return deleted;
+    return count;
   }
 
-  override cleanupStaleInstances(maxAgeMs: number): number {
-    const cleaned = super.cleanupStaleInstances(maxAgeMs);
+  cleanupStaleInstances(maxAgeMs: number): number {
+    const { count, ids } = this.memory.cleanupStaleInstancesWithIds(maxAgeMs);
     // 接口是同步的（返回 number），这里只能异步收尾。但不能让这个 promise
     // 彻底脱管：close() 需要等它结束，否则关闭过程可能和删文件抢跑；测试
     // 也需要一个可等待的句柄，而不是靠 sleep 猜时间。
-    this.pendingFileCleanup = this.removeStaleInstanceFiles(maxAgeMs).catch(
+    this.pendingFileCleanup = this.removeStaleInstanceFiles(ids).catch(
       (error: unknown) => {
         Logger.error(
           "system",
@@ -550,7 +651,7 @@ export class LocalFileStorage extends MemoryStorage {
         );
       },
     );
-    return cleaned;
+    return count;
   }
 
   /**
@@ -564,12 +665,12 @@ export class LocalFileStorage extends MemoryStorage {
     await Promise.all(this.writeQueues.values());
   }
 
-  override async close(): Promise<void> {
+  async close(): Promise<void> {
     // 先等异步文件清理收尾，避免关闭过程与它抢跑
     await this.pendingFileCleanup;
     await Promise.all(this.writeQueues.values());
     this.connected = false;
-    await super.close();
+    await this.memory.close();
   }
 
   async saveDeadLetterEntry(entry: unknown): Promise<void> {
@@ -620,14 +721,16 @@ export class LocalFileStorage extends MemoryStorage {
     await this.removeFile("webhook-deliveries", id);
   }
 
-  private async removeStaleInstanceFiles(_maxAgeMs: number): Promise<void> {
+  private async removeStaleInstanceFiles(
+    cleanedIds: readonly string[],
+  ): Promise<void> {
     // 内存侧刚删掉的实例，文件精确删除即可——不需要再 readdir 整个目录
     // 并逐个 loadInstance（那会把每个实例都深拷贝一遍）。
-    await this.removeFilesConcurrently(
+    await this.removeFilesConcurrently("instances", cleanedIds);
+    await this.sweepOrphans(
       "instances",
-      this.lastCleanedInstanceIds,
+      (id) => this.memory.getInstanceRef(id) != null,
     );
-    await this.sweepOrphans("instances", (id) => this.peekInstance(id) != null);
   }
 
   /** 并发删除一批文件，替代此前逐个 await 的串行 unlink。 */
@@ -737,7 +840,7 @@ export class LocalFileStorage extends MemoryStorage {
     });
 
     for (const metrics of merged.values()) {
-      await super.saveInstanceMetrics(metrics);
+      await this.memory.saveInstanceMetrics(metrics);
     }
   }
 
@@ -934,8 +1037,9 @@ export class LocalFileStorage extends MemoryStorage {
    * restart would recover the older, correct-for-disk state while the live
    * process kept serving the newer one). `rollback` should restore the
    * in-memory collection to what it held before the mutation — typically a
-   * `super.saveX(previousValue)`/`super.deleteX(...)` call — and the original
-   * disk-write error is always rethrown so callers still see the failure.
+   * `this.memory.saveX(previousValue)`/`this.memory.deleteX(...)` call — and
+   * the original disk-write error is always rethrown so callers still see
+   * the failure.
    */
   private async persistOrRollback(
     collection: Collection,

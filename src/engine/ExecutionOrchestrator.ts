@@ -31,7 +31,7 @@ import {
 import { Logger } from "../utils/Logger";
 import type { LoopNodeConfig } from "./executors/LoopNodeExecutor";
 import { LoopNodeExecutor } from "./executors/LoopNodeExecutor";
-import type { HeartbeatManager } from "./HeartbeatManager";
+import type { HeartbeatTracker } from "./HeartbeatTracker";
 import type { InstanceManager } from "./InstanceManager";
 import { resolveWaitDurationMs } from "./nodeDispatch/helpers";
 import { StateMachine } from "./StateMachine";
@@ -55,7 +55,7 @@ export class ExecutionOrchestrator {
       options?: { parentInstanceId?: string },
     ) => Promise<string>,
     /** 引擎持有的、已配置好 storage/workerId/超时兜底的心跳管理器，透传给 TaskExecutor */
-    private heartbeatManager?: HeartbeatManager,
+    private heartbeatTracker?: HeartbeatTracker,
   ) {}
 
   /**
@@ -899,7 +899,7 @@ export class ExecutionOrchestrator {
                     },
                     rejectBody,
                     storage,
-                    this.heartbeatManager,
+                    this.heartbeatTracker,
                   );
                 });
               } finally {
@@ -925,7 +925,7 @@ export class ExecutionOrchestrator {
               onComplete,
               onError,
               storage,
-              this.heartbeatManager,
+              this.heartbeatTracker,
             );
           }
         }),

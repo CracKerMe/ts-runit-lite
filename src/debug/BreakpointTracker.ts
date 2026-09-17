@@ -10,7 +10,7 @@ export interface Breakpoint {
   enabled: boolean;
 }
 
-export class BreakpointManager {
+export class BreakpointTracker {
   private readonly breakpoints = new Map<string, Breakpoint>();
 
   add(instanceId: string, nodeId: string, condition?: string): Breakpoint {

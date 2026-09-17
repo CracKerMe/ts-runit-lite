@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   type SearchAttributeDefinition,
-  SearchAttributeManager,
-} from "../../engine/SearchAttributeManager";
+  SearchAttributeTracker,
+} from "../../engine/SearchAttributeTracker";
 
-describe("SearchAttributeManager", () => {
-  let manager: SearchAttributeManager;
+describe("SearchAttributeTracker", () => {
+  let manager: SearchAttributeTracker;
 
   beforeEach(() => {
-    manager = new SearchAttributeManager();
+    manager = new SearchAttributeTracker();
   });
 
   describe("registerAttribute", () => {

@@ -1,11 +1,11 @@
 // oxlint-disable no-explicit-any -- test/example file uses dynamic types
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  HeartbeatManager,
+  HeartbeatTracker,
   type HeartbeatState,
-} from "../../engine/HeartbeatManager";
+} from "../../engine/HeartbeatTracker";
 
-describe("HeartbeatManager - Persistence", () => {
+describe("HeartbeatTracker - Persistence", () => {
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -18,7 +18,7 @@ describe("HeartbeatManager - Persistence", () => {
         deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
       };
 
-      const manager = new HeartbeatManager(mockStorage as any);
+      const manager = new HeartbeatTracker(mockStorage as any);
       const heartbeatKey = await manager.start({
         instanceId: "wf1",
         nodeId: "node1",
@@ -46,7 +46,7 @@ describe("HeartbeatManager - Persistence", () => {
         deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
       };
 
-      const manager = new HeartbeatManager(mockStorage as any);
+      const manager = new HeartbeatTracker(mockStorage as any);
       await manager.start({
         instanceId: "wf1",
         nodeId: "node1",
@@ -90,7 +90,7 @@ describe("HeartbeatManager - Persistence", () => {
         deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
       };
 
-      const manager = new HeartbeatManager(mockStorage as any);
+      const manager = new HeartbeatTracker(mockStorage as any);
       await manager.restoreHeartbeats();
 
       // Verify restore was called
@@ -123,7 +123,7 @@ describe("HeartbeatManager - Persistence", () => {
         deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
       };
 
-      const manager = new HeartbeatManager(mockStorage as any);
+      const manager = new HeartbeatTracker(mockStorage as any);
       await manager.restoreHeartbeats();
 
       // Expired heartbeat should not be active
@@ -140,7 +140,7 @@ describe("HeartbeatManager - Persistence", () => {
         deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
       };
 
-      const manager = new HeartbeatManager(mockStorage as any);
+      const manager = new HeartbeatTracker(mockStorage as any);
       await manager.start({
         instanceId: "wf1",
         nodeId: "node1",
@@ -155,7 +155,7 @@ describe("HeartbeatManager - Persistence", () => {
 
     it("should invoke onTimeout when heartbeat expires", async () => {
       const onTimeout = vi.fn();
-      const manager = new HeartbeatManager();
+      const manager = new HeartbeatTracker();
 
       await manager.start(
         {
@@ -183,7 +183,7 @@ describe("HeartbeatManager - Persistence", () => {
         deleteHeartbeat: vi.fn().mockResolvedValue(undefined),
       };
       return {
-        manager: new HeartbeatManager(mockStorage as any),
+        manager: new HeartbeatTracker(mockStorage as any),
         mockStorage,
       };
     }

@@ -5,7 +5,7 @@
 ## 项目信息
 
 **项目名**: ts-workflow-engine-lite  
-**版本**: 3.0.2（2026 年 9 月）  
+**版本**: 3.0.3（2026 年 9 月）  
 **类型**: 轻量级 TypeScript 工作流引擎，面向单进程嵌入式场景  
 **语言**: TypeScript + Express v5  
 **包管理**: pnpm
@@ -102,7 +102,7 @@ src/
 │   ├── StateMachine.ts          # 状态机
 │   ├── ExpressionEvaluator.ts   # 表达式引擎
 │   ├── ConcurrencyControl.ts    # CAS 并发控制
-│   ├── HeartbeatManager.ts      # 心跳持久化（单进程）
+│   ├── HeartbeatTracker.ts      # 心跳持久化（单进程）
 │   ├── InstanceManager.ts       # 实例管理
 │   ├── WorkflowRegistry.ts      # 工作流注册表
 │   └── executors/               # 节点执行器：action/http/sql/queue/condition/
@@ -290,7 +290,7 @@ export interface WorkflowDefinition {
 ### 5. Heartbeat 跟踪
 
 - 长时运行任务的进度报告
-- `HeartbeatManager` 通过 `StorageProvider` 保存和恢复 Heartbeat 状态
+- `HeartbeatTracker` 通过 `StorageProvider` 保存和恢复 Heartbeat 状态
 - 使用默认 `LocalFileStorage` 时可跨普通进程重启恢复
 - 使用 `MemoryStorage` 时仅在当前进程生命周期内保留
 
@@ -320,7 +320,7 @@ export interface WorkflowDefinition {
 - 每个 worker 有稳定 `workerId`；同一实例的后续任务优先路由回已绑定的 worker（`WORKER_STICKY_ENABLED`）
 - 绑定的 worker 忙碌时回退到任意空闲 worker——亲和性只做优化，不会阻塞任务
 - worker 退出或池关闭时释放绑定，避免实例被绑死在已终止的线程上
-- 实现见 `src/engine/worker/WorkerPool.ts` 与 `src/engine/StickyExecutionManager.ts`
+- 实现见 `src/engine/worker/WorkerPool.ts` 与 `src/engine/StickyExecutionPolicy.ts`
 
 ### 9. 任务队列路由（TaskQueueManager）
 
@@ -453,6 +453,6 @@ curl http://localhost:3345/workflow-api/v1/workflows
 ## 最后更新
 
 - **日期**: 2026-09-17
-- **版本**: 3.0.2
+- **版本**: 3.0.3
 - **维护者**: Sario
 - **许可证**: MIT

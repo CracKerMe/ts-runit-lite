@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { ContinueAsNewManager } from "../../engine/ContinueAsNewManager";
+import { ContinueAsNewTracker } from "../../engine/ContinueAsNewTracker";
 
-describe("ContinueAsNewManager", () => {
-  let manager: ContinueAsNewManager;
+describe("ContinueAsNewTracker", () => {
+  let manager: ContinueAsNewTracker;
 
   beforeEach(() => {
-    manager = new ContinueAsNewManager();
+    manager = new ContinueAsNewTracker();
   });
 
   describe("prepareContinueAsNew", () => {

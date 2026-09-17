@@ -25,14 +25,14 @@ describe("API Integration Tests", () => {
   let engine: WorkflowEngine;
   let scheduler: CronScheduler;
 
-  async function createEngineV2(
+  async function createTestEngine(
     storageProvider: MemoryStorage,
   ): Promise<WorkflowEngine> {
     const eventBus = new EventBus();
     scheduler = new CronScheduler(storageProvider);
     const dlq = new DeadLetterQueue(storageProvider);
 
-    const v2Engine = new WorkflowEngine(
+    const testEngine = new WorkflowEngine(
       storageProvider,
       eventBus,
       scheduler,
@@ -44,14 +44,14 @@ describe("API Integration Tests", () => {
       },
     );
 
-    await v2Engine.initialize();
-    return v2Engine;
+    await testEngine.initialize();
+    return testEngine;
   }
 
   beforeEach(async () => {
     storage = new MemoryStorage();
     await storage.connect();
-    engine = await createEngineV2(storage);
+    engine = await createTestEngine(storage);
   });
 
   afterEach(async () => {

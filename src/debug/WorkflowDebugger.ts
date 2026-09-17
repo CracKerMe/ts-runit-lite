@@ -1,6 +1,6 @@
 import { EventEmitter } from "node:events";
 import { Logger } from "../utils/Logger";
-import { type Breakpoint, BreakpointManager } from "./BreakpointManager";
+import { type Breakpoint, BreakpointTracker } from "./BreakpointTracker";
 
 export type DebuggerState =
   | "idle"
@@ -19,7 +19,7 @@ export interface DebugSnapshot {
 }
 
 export class WorkflowDebugger extends EventEmitter {
-  private readonly breakpoints = new BreakpointManager();
+  private readonly breakpoints = new BreakpointTracker();
   private state: DebuggerState = "idle";
   private instanceId: string | null = null;
   private variables: Record<string, unknown> = {};

@@ -4,7 +4,7 @@ import type { StorageProvider } from "../storage/StorageProvider";
 import { mapWithConcurrency } from "../utils/concurrency";
 import { Logger } from "../utils/Logger";
 import { ConcurrencyConflictError } from "./errors";
-import { searchAttributeManager } from "./SearchAttributeManager";
+import { searchAttributeTracker } from "./SearchAttributeTracker";
 
 /**
  * 实例管理器
@@ -94,18 +94,18 @@ export class InstanceManager {
     const attributes = instance.searchAttributes ?? {};
 
     for (const [key, value] of Object.entries(attributes)) {
-      if (!searchAttributeManager.getDefinition(key)) {
+      if (!searchAttributeTracker.getDefinition(key)) {
         const type =
           typeof value === "boolean"
             ? "bool"
             : typeof value === "number"
               ? "double"
               : "keyword";
-        searchAttributeManager.registerAttribute({ name: key, type });
+        searchAttributeTracker.registerAttribute({ name: key, type });
       }
     }
 
-    searchAttributeManager.index(instance.instanceId, attributes, {
+    searchAttributeTracker.index(instance.instanceId, attributes, {
       workflowId: instance.workflowId,
       status: instance.status,
     });
@@ -116,7 +116,7 @@ export class InstanceManager {
    */
   removeInstance(instanceId: string): void {
     this.instances.delete(instanceId);
-    searchAttributeManager.removeIndex(instanceId);
+    searchAttributeTracker.removeIndex(instanceId);
   }
 
   /**

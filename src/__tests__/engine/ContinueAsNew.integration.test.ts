@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { bootstrap } from "../../bootstrap";
 import type { WorkflowDefinition } from "../../model/Workflow";
-import { searchAttributeManager } from "../../engine/SearchAttributeManager";
+import { searchAttributeTracker } from "../../engine/SearchAttributeTracker";
 import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 
 const wait = (ms: number) => new Promise((res) => setTimeout(res, ms));
@@ -66,7 +66,7 @@ describe("Continue-As-New + Search Attributes wiring (integration)", () => {
     expect(engine.getInstance(sourceId)?.status).toBe("completed");
 
     // A brand-new dest instance was actually started — discoverable via search.
-    const destIds = searchAttributeManager.query({ workflowId: "cont-dest" });
+    const destIds = searchAttributeTracker.query({ workflowId: "cont-dest" });
     expect(destIds.length).toBe(1);
 
     const destInstance = engine.getInstance(destIds[0]);
@@ -101,13 +101,13 @@ describe("Continue-As-New + Search Attributes wiring (integration)", () => {
 
     // Attribute filter.
     expect(
-      searchAttributeManager.query({ attributes: { region: "us" } }),
+      searchAttributeTracker.query({ attributes: { region: "us" } }),
     ).toContain(id);
 
     // Status filter reflects the completed instance.
-    const completed = searchAttributeManager.query({ status: ["completed"] });
+    const completed = searchAttributeTracker.query({ status: ["completed"] });
     expect(completed).toContain(id);
-    expect(searchAttributeManager.query({ status: ["running"] })).not.toContain(
+    expect(searchAttributeTracker.query({ status: ["running"] })).not.toContain(
       id,
     );
   });

@@ -8,8 +8,8 @@ import {
 } from "../../engine/InstanceSearch";
 import {
   type SearchAttributeValue,
-  searchAttributeManager,
-} from "../../engine/SearchAttributeManager";
+  searchAttributeTracker,
+} from "../../engine/SearchAttributeTracker";
 import type { WorkflowEngine } from "../../engine/WorkflowEngine";
 import type { ExecutionLog, WorkflowInstance } from "../../model/Instance";
 import type { WorkflowDefinition } from "../../model/Workflow";
@@ -285,7 +285,7 @@ router.get(
       ? Number.parseInt(req.query.limit as string, 10)
       : undefined;
 
-    const instanceIds = searchAttributeManager.query({
+    const instanceIds = searchAttributeTracker.query({
       workflowId,
       status,
       attributes,

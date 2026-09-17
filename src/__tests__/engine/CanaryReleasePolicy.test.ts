@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { MemoryStorage } from "../../storage/MemoryStorage";
-import { CanaryReleaseManager } from "../../engine/CanaryReleaseManager";
+import { CanaryReleasePolicy } from "../../engine/CanaryReleasePolicy";
 
-describe("CanaryReleaseManager", () => {
+describe("CanaryReleasePolicy", () => {
   it("starts, promotes, rolls back, and evaluates canary releases", async () => {
     const storage = new MemoryStorage();
     await storage.connect();
@@ -25,7 +25,7 @@ describe("CanaryReleaseManager", () => {
       setActiveWorkflowVersion: vi.fn(),
       setReleasePolicy: vi.fn(),
     };
-    const manager = new CanaryReleaseManager(storage, engine);
+    const manager = new CanaryReleasePolicy(storage, engine);
 
     await manager.startCanaryRelease("wf-canary", 2, 100, {
       autoPromote: true,

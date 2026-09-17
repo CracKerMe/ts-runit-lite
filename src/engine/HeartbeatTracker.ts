@@ -21,7 +21,7 @@ export interface HeartbeatState {
   createdAt: number;
 }
 
-export class HeartbeatManager {
+export class HeartbeatTracker {
   private timers: Map<string, NodeJS.Timeout> = new Map();
   private timeoutTimers: Map<string, NodeJS.Timeout> = new Map();
   private heartbeatStates: Map<string, HeartbeatState> = new Map();
@@ -346,7 +346,7 @@ export class HeartbeatManager {
     const last = this.lastPersistedAt.get(key);
     if (
       last !== undefined &&
-      now - last < HeartbeatManager.PERSIST_MIN_INTERVAL_MS
+      now - last < HeartbeatTracker.PERSIST_MIN_INTERVAL_MS
     ) {
       return false;
     }
@@ -370,12 +370,12 @@ export class HeartbeatManager {
   }
 }
 
-export const heartbeatManager = new HeartbeatManager();
+export const heartbeatTracker = new HeartbeatTracker();
 
-export function configureHeartbeatManager(
+export function configureHeartbeatTracker(
   storage?: StorageProvider,
   workerId?: string,
-): HeartbeatManager {
-  heartbeatManager.configure(storage, workerId);
-  return heartbeatManager;
+): HeartbeatTracker {
+  heartbeatTracker.configure(storage, workerId);
+  return heartbeatTracker;
 }

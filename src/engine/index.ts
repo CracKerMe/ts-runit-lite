@@ -5,11 +5,7 @@ export {
   getConcurrencyControl,
   setConcurrencyControl,
 } from "./ConcurrencyControl";
-export {
-  type CreateEngineOptions,
-  createEngine,
-  createEngineV2,
-} from "./createEngine";
+export { type CreateEngineOptions, createEngine } from "./createEngine";
 export { ExecutionOrchestrator } from "./ExecutionOrchestrator";
 export {
   evaluateCondition,
@@ -46,10 +42,15 @@ export {
   type TaskQueueType,
 } from "./TaskQueueManager";
 export {
-  StickyExecutionManager,
-  stickyExecutionManager,
+  StickyExecutionPolicy,
+  stickyExecutionPolicy,
   type StickyOptions,
   type StickyWorker,
+} from "./StickyExecutionPolicy";
+/** @deprecated Use `StickyExecutionPolicy` / `stickyExecutionPolicy` instead. */
+export {
+  StickyExecutionManager,
+  stickyExecutionManager,
 } from "./StickyExecutionManager";
 export {
   type InstanceVersionMigrationOptions,

@@ -66,9 +66,9 @@ ts-workflow-engine-lite 在真实业务中可覆盖的场景，并给出每个�
 | **Webhook**         | `/webhooks` 端点（注册、投递、重试、清理）               | 向外部系统主动推送流程状态               |
 | **Analytics / SLA** | `/analytics/overview`、`/anomalies`、`/sla`              | 流程效能度量、超时预警、异常检测         |
 | **任务队列路由**    | 节点 `taskQueue` + `TaskQueueManager`                    | 把重活分发给专用 worker，隔离资源        |
-| **Worker 线程池**   | `WORKER_POOL_ENABLED` + Sticky 亲和性                    | CPU/IO 密集型节点卸载，主线程不阻塞      |
+| **Worker 线程池**   | `WORKER_POOL_ENABLED` + Sticky 亲和性（高级/可选）       | CPU/IO 密集型节点卸载，主线程不阻塞      |
 | **Secret 解析**     | `${secret:NAME}`（http/sql/queue 节点）                  | 凭据不落工作流定义，安全合规             |
-| **调试能力**        | `WorkflowDebugger` + `BreakpointManager`                 | 复杂流程的断点调试                       |
+| **调试能力**        | `WorkflowDebugger` + `BreakpointTracker`                 | 复杂流程的断点调试                       |
 | **测试能力**        | `TestGenerator`、`MutationTester`、`DryRunExecutor`      | 流程上线前的自动验证、变更影响分析       |
 | **模板系统**        | `/templates` + `instantiate`                             | 让业务人员基于模板自助创建流程           |
 | **版本管理**        | `workflow-versions` 存储目录                             | 流程灰度、回滚、A/B                      |
@@ -575,6 +575,8 @@ queue(consume: "cdc-events") → P-10 幂等去重 → router(按表分流)
 
 > 这是本引擎**最具想象空间**的新兴场景：LLM 调用天然是 `http` 节点，
 > Agent 的"思考-行动"循环天然是 `loop` + `router`，而 `approval` 提供了 AI 安全的人工闸门。
+>
+> 可运行的最小示例见 [`examples/llm-approval-workflow.ts`](../examples/llm-approval-workflow.ts)（`pnpm example llm-approval-workflow`）：LLM 起草 → 人工审批 → 审批超时自动降级到预设回复，对应 6.1 中 `approval` 作为 AI 安全闸门的模式。
 
 #### 6.1 RAG 问答流水线 ⭐
 
@@ -778,6 +780,8 @@ event(user.registered) → notification(欢迎)
 | 高吞吐（万级 TPS）流程                | 本地文件存储 + 单进程                                             | 数据库后端 + 集群方案               |
 | 强事务 ACID 跨库                      | 无分布式事务                                                      | **P-1 Saga 补偿**                   |
 | 跨机房容灾自动切换                    | 无复制能力                                                        | 外部存储复制 + 冷备                 |
+
+规模对比（同等复杂度的单一流程，仅供直觉参考，非严格基准）：一条 4.1 发布流水线（`approval` + 灰度 `router` + 观察 `wait` + 自动 `rollback`）在本引擎下是一个约 60-80 行的 `WorkflowDefinition` JSON/TS 对象、零额外部署依赖（`pnpm add ts-workflow-engine-lite`）；等价的 Temporal 实现需要一个独立的 Worker 进程、Activity/Workflow 两层代码、以及一套 Temporal Server（自托管或 Cloud）作为运行时依赖——复杂度差异主要来自"进程内跑完"与"平台化跨进程编排"这两种不同的部署形态，而非节点类型数量。
 
 ### 5.2 场景适配度自检清单
 

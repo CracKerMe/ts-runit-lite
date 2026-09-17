@@ -9,12 +9,12 @@ import {
   destroyContainer,
   setContainer,
 } from "./container";
-import { configureHeartbeatManager } from "./engine/HeartbeatManager";
+import { configureHeartbeatTracker } from "./engine/HeartbeatTracker";
 import {
   configureActionSandboxIsolation,
   shutdownActionSandboxIsolation,
 } from "./engine/SandboxEvaluator";
-import { stickyExecutionManager } from "./engine/StickyExecutionManager";
+import { stickyExecutionPolicy } from "./engine/StickyExecutionPolicy";
 import { initWorkerPool, shutdownWorkerPool } from "./engine/TaskExecutor";
 import { WorkflowEngine } from "./engine/WorkflowEngine";
 import { setShutdownInstance, setupGracefulShutdown } from "./lifecycle";
@@ -83,7 +83,7 @@ export async function bootstrap(
     storageDirectory: options.storageDirectory ?? config.storage.directory,
   });
   setContainer(container);
-  configureHeartbeatManager(container.storage);
+  configureHeartbeatTracker(container.storage);
   setupNotificationChannelsFromEnv();
 
   // Install the secret manager used to resolve ${secret:name} in node configs.
@@ -107,7 +107,7 @@ export async function bootstrap(
   }
 
   if (config.workerPool.enabled) {
-    stickyExecutionManager.setOptions({
+    stickyExecutionPolicy.setOptions({
       enabled: config.workerPool.stickyEnabled,
       cacheSize: config.workerPool.stickyCacheSize,
       ttlMs: config.workerPool.stickyTtlMs,

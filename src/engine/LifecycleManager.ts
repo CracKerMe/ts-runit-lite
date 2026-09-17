@@ -1,7 +1,7 @@
 import type { WorkflowInstance } from "../model/Instance";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { errorStack, Logger } from "../utils/Logger";
-import { searchAttributeManager } from "./SearchAttributeManager";
+import { searchAttributeTracker } from "./SearchAttributeTracker";
 
 /**
  * 生命周期管理器
@@ -71,7 +71,7 @@ export class LifecycleManager {
 
       if (isCompleted && isStale) {
         instances.delete(id);
-        searchAttributeManager.removeIndex(id);
+        searchAttributeTracker.removeIndex(id);
         if (typeof this.storage?.deleteInstance === "function") {
           void this.storage.deleteInstance(id).catch((error: unknown) => {
             Logger.error(

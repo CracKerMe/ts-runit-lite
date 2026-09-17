@@ -1,4 +1,4 @@
-export { type Breakpoint, BreakpointManager } from "./BreakpointManager";
+export { type Breakpoint, BreakpointTracker } from "./BreakpointTracker";
 export {
   type DebuggerState,
   type DebugSnapshot,

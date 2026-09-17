@@ -11,7 +11,7 @@ export interface ContinueAsNewResult {
   previousInstanceId: string;
 }
 
-export class ContinueAsNewManager {
+export class ContinueAsNewTracker {
   private pendingContinuations: Map<string, ContinueAsNewOptions> = new Map();
 
   prepareContinueAsNew(
@@ -54,4 +54,4 @@ export class ContinueAsNewManager {
   }
 }
 
-export const continueAsNewManager = new ContinueAsNewManager();
+export const continueAsNewTracker = new ContinueAsNewTracker();

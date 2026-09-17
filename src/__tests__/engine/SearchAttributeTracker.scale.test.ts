@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { SearchAttributeManager } from "../../engine/SearchAttributeManager";
+import { SearchAttributeTracker } from "../../engine/SearchAttributeTracker";
 
-describe("SearchAttributeManager – large result sets", () => {
-  let manager: SearchAttributeManager;
+describe("SearchAttributeTracker – large result sets", () => {
+  let manager: SearchAttributeTracker;
 
   beforeEach(() => {
-    manager = new SearchAttributeManager();
+    manager = new SearchAttributeTracker();
     manager.registerAttribute({ name: "region", type: "keyword" });
   });
 

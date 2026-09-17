@@ -36,20 +36,13 @@ export async function startApiServer(
   return server.startApiServer(engine, storage, config);
 }
 
-export const startServer = startApiServer;
 export {
   type AppContext,
   type BootstrapOptions,
   bootstrap,
   loadEnv,
 } from "./bootstrap";
-export {
-  type AppContainer,
-  createContainer,
-  destroyContainer,
-  getContainer,
-  setContainer,
-} from "./container";
+export { type AppContainer, destroyContainer } from "./container";
 export { DSLParseError, parseDSL } from "./dsl/DSLParser";
 export type {
   DSLConditionalBranch,
@@ -59,11 +52,7 @@ export type {
   DSLValue,
   DSLWorkflow,
 } from "./dsl/WorkflowDSL";
-export {
-  type CreateEngineOptions,
-  createEngine,
-  createEngineV2,
-} from "./engine/createEngine";
+export { type CreateEngineOptions, createEngine } from "./engine/createEngine";
 export {
   evaluateCondition,
   getNestedValue,
@@ -188,10 +177,15 @@ export {
   setSecretManager,
 } from "./utils/secrets";
 export {
-  StickyExecutionManager,
-  stickyExecutionManager,
+  StickyExecutionPolicy,
+  stickyExecutionPolicy,
   type StickyOptions,
   type StickyWorker,
+} from "./engine/StickyExecutionPolicy";
+/** @deprecated Use `StickyExecutionPolicy` / `stickyExecutionPolicy` instead. */
+export {
+  StickyExecutionManager,
+  stickyExecutionManager,
 } from "./engine/StickyExecutionManager";
 export {
   type Task,
@@ -207,5 +201,11 @@ export {
   StorageType,
   createStorage,
   getStorageType,
+  withStorageCache,
+  withStorageMetrics,
 } from "./storage/index";
-export type { LocalFileStorageOptions, StorageProvider } from "./storage/index";
+export type {
+  CacheStorageMiddlewareOptions,
+  LocalFileStorageOptions,
+  StorageProvider,
+} from "./storage/index";

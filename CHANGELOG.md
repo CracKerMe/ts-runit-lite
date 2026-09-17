@@ -2,6 +2,56 @@
 
 All notable changes to ts-workflow-engine-lite will be documented in this file.
 
+## [Unreleased]
+
+No unreleased changes.
+
+## [3.0.3] - 2026-09-17
+
+### Breaking Changes
+
+- **内部 Manager 类按职责重命名为 `*Policy`（决策/策略类）或 `*Tracker`（状态跟踪类）**，其余名副其实的 `*Manager`（CRUD/生命周期编排类）保持不变：
+  - `CanaryReleaseManager` → `CanaryReleasePolicy`（灰度发布晋升/回滚的决策逻辑）—— **内部类，未从包根导出，无公开 API 影响**
+  - `ContinueAsNewManager` → `ContinueAsNewTracker`（跟踪待处理的续期状态）—— **内部类，无公开 API 影响**
+  - `SearchAttributeManager` → `SearchAttributeTracker`（跟踪可查询的实例索引状态）—— **内部类，无公开 API 影响**
+  - `HeartbeatManager` → `HeartbeatTracker`（跟踪心跳状态与截止时间）—— **内部类，无公开 API 影响**
+  - `StickyExecutionManager` → `StickyExecutionPolicy`（决策实例应路由到哪个 Worker）—— **从包根导出**，旧名称 `StickyExecutionManager` / `stickyExecutionManager` 保留为 `@deprecated` 别名
+  - `BreakpointManager` → `BreakpointTracker`（跟踪断点命中状态）—— 仅在 `src/debug` 内部导出（未从包根导出），无 `@deprecated` 别名，直接改用新名称
+  - `NotificationManager`、`WebhookManager`、`InstanceManager`、`LifecycleManager`、`TaskQueueManager`、`WorkflowVersionManager`、`HookManager`、`ArchiveManager`、`ConsoleWebSocketManager`、`SecretManager` **未重命名**：这些类的主要职责是 CRUD/生命周期编排或注册表，"Manager" 是准确的命名，重命名只会制造churn而无实质收益。
+- **删除已废弃的初始化 API 别名**：
+  - `createEngineV2` **已删除**（此前标记 `@deprecated`，本版本正式移除）。改用 `createEngine`。
+  - `startServer` **已删除**（`src/index.ts`/`src/api/index.ts`/`src/api/server.ts` 三处别名一并移除）。改用 `startApiServer`。
+  - `createContainer` / `setContainer` / `getContainer` **不再从包根导出**（`src/index.ts`）。这三个函数仍存在于 `src/container.ts` 并被 `bootstrap()` 内部使用，但不再是公开 API——进程容器只能通过 `bootstrap()` 创建。`AppContainer` 类型与 `destroyContainer` 函数继续导出，因为 `bootstrap()` 返回的容器仍需要一种公开的方式来清理。
+
+### Deprecations
+
+以下导出仍可用，仅标注 `@deprecated`，保留给依赖旧名称的宿主应用：
+
+- `StickyExecutionManager` / `stickyExecutionManager` → 改用 `StickyExecutionPolicy` / `stickyExecutionPolicy`
+
+### New Features
+
+- **存储中间件**：新增 `withStorageMetrics(storage, onTiming)` 与 `withStorageCache(storage, options)`，均从包根与 `src/storage/index.ts` 导出。两者都基于 `Proxy` 透明包装任意 `StorageProvider` 实现，不需要为 40+ 方法的接口手写委托：
+  - `withStorageMetrics`：记录每次方法调用的耗时，通过回调上报，不改变返回值或异常行为。
+  - `withStorageCache`：为 `loadInstance`/`loadWorkflow`（可配置）加一层短期内存读缓存，命中写方法时整体失效。仅适用于单进程部署；多进程共享同一存储后端时不安全（没有跨进程失效信号）。
+
+### Internal
+
+- **`LocalFileStorage` 由继承改为组合**：`class LocalFileStorage extends MemoryStorage` 改为 `class LocalFileStorage implements StorageProvider`，内部持有私有的 `MemoryStorage` 实例作为查询层，不再是它的子类。**`LocalFileStorage` 的公开方法表面（`StorageProvider` 接口）完全不变，不是破坏性变更**——外部消费方无需改动任何调用代码。
+  - `MemoryStorage` 新增了一批具体类方法（`saveInstanceAndPeek`/`casUpdateInstanceAndPeek`/`saveHeartbeatAndPeek`/`saveInstanceMetricsAndPeek`/`updateNodeMetricsAndPeek`/`getInstanceRef`/`getHeartbeatRef`/`peekInstanceMetricsForOwner`/`cleanupStaleEventsWithIds`/`cleanupExpiredHeartbeatsWithIds`/`cleanupStaleInstancesWithIds`），供 `LocalFileStorage` 通过持有的具体 `MemoryStorage` 类型引用调用，替代此前依赖的 `protected` 成员（`peekInstance`/`peekInstanceMetrics`/`peekHeartbeat`/`lastCleaned*Ids`）。这些方法**不在** `StorageProvider` 接口上，纯属 `MemoryStorage` 具体类新增的公开方法，属于签名放宽而非收窄，通常不会破坏现有 TypeScript 消费方；`StorageProvider.ts` 与 `src/storage/database-adapters.ts` 均未改动。
+  - 二级索引一致性、`updateNodeMetrics` 的"替换而非就地修改"语义、启动时全量恢复进内存（运行期读取从不落盘）等既有行为均未改变。
+  - 回归验证：`pnpm test`（148 个测试文件、1539 个用例）、`pnpm typecheck`、`pnpm lint` 全部通过，重点覆盖 `MemoryStorage.indexes.test.ts` 的索引规模断言、`LocalFileStorage.coalescing.test.ts` 的失败回滚、`src/__tests__/benchmarks/` 下的堆内存与吞吐基准。
+
+### Documentation
+
+- README / README.zh 补充 npm 包名（`ts-workflow-engine-lite`）与 GitHub 仓库名（`ts-runit-lite`）不一致的说明。
+- README / README.zh 的"何时使用此引擎"一节补充超大实例量 / 长节点历史场景的建议（自定义存储适配器）。
+- README / README.zh 新增内置 `sqlite` / `postgres` 存储适配器（快照式持久化，需可选依赖）的说明。
+- README / README.zh 新增"测试你的工作流"一节，介绍此前未在 README 中出现过的 `testWorkflow` / `MutationTester`。
+- README / README.zh 的"初始化 API"对照表更新为反映 `createContainer`/`setContainer`/`getContainer` 不再公开导出，仅保留 `bootstrap()` 与 `createEngine()` 两条路径。
+- 源码与文档中残留的 "V2" 措辞（`WorkflowEngine` 相关注释与 README 引擎类型提法）已清理，不影响导出的类型/函数名。
+- `docs/BUSINESS_SCENARIOS.md` 的能力速查表与内部注释同步更新为重命名后的类名。
+
 ## [3.0.2] - 2026-09-17
 
 ### Bug Fixes

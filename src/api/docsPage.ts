@@ -721,9 +721,9 @@ ${fnRows}
   <section id="heartbeat">
     <h2>Heartbeat 跟踪</h2>
     <p>长时间运行的 <code>action</code> 节点可通过 <code>heartbeat</code> 配置定期上报进度。
-    <code>HeartbeatManager</code> 通过 <code>StorageProvider</code> 保存和恢复 Heartbeat 状态：
+    <code>HeartbeatTracker</code> 通过 <code>StorageProvider</code> 保存和恢复 Heartbeat 状态：
     使用默认 <code>LocalFileStorage</code> 时可跨进程重启恢复，使用 <code>MemoryStorage</code> 时仅在当前进程生命周期内保留。</p>
-    <p>实现见 <code>src/engine/HeartbeatManager.ts</code>。</p>
+    <p>实现见 <code>src/engine/HeartbeatTracker.ts</code>。</p>
   </section>
 
   <section id="storage">
@@ -756,7 +756,7 @@ ${fnRows}
     每个 worker 有稳定 <code>workerId</code>；同一实例的后续任务优先路由回已绑定的 worker（<code>WORKER_STICKY_ENABLED</code>），
     绑定的 worker 忙碌时会回退到任意空闲 worker —— 亲和性只做优化，不会阻塞任务。worker 退出或池关闭时释放绑定，
     避免实例被绑死在已终止的线程上。</p>
-    <p>实现见 <code>src/engine/worker/WorkerPool.ts</code> 与 <code>src/engine/StickyExecutionManager.ts</code>。</p>
+    <p>实现见 <code>src/engine/worker/WorkerPool.ts</code> 与 <code>src/engine/StickyExecutionPolicy.ts</code>。</p>
   </section>
 
   <section id="task-queue">

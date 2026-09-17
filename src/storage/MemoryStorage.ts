@@ -317,16 +317,148 @@ export class MemoryStorage implements StorageProvider {
     return this.heartbeats.get(heartbeatKey);
   }
 
-  /** 事件是否还在内存里。孤儿清扫用，不需要取值因此不 clone。 */
-  protected hasEventInMemory(eventId: string): boolean {
+  /**
+   * 返回存储中的实例引用，不做深拷贝。供组合模式下的
+   * {@link LocalFileStorage} 使用，等价于 {@link peekInstance} 但不依赖
+   * `protected` 可见性——`LocalFileStorage` 不再是子类，只能通过一个具体
+   * 的 `MemoryStorage` 类型引用调用这类不在 `StorageProvider` 接口上的
+   * 方法。见 {@link peekInstance} 的可见性警告，这里同样适用。
+   *
+   * @internal 不是公开 API。仅供本包内持有具体 `MemoryStorage` 类型引用的
+   * 调用方（当前只有 `LocalFileStorage`）使用；不要在应用代码中直接调用。
+   */
+  getInstanceRef(instanceId: string): WorkflowInstance | undefined {
+    return this.instances.get(instanceId);
+  }
+
+  /**
+   * 见 {@link getInstanceRef}；heartbeats 同样整体替换。
+   * @internal 见 {@link getInstanceRef} 的可见性警告。
+   */
+  getHeartbeatRef(heartbeatKey: string): HeartbeatState | undefined {
+    return this.heartbeats.get(heartbeatKey);
+  }
+
+  /**
+   * 写入实例并返回存入 Map 的那份 clone 的引用。
+   *
+   * 供组合模式下的 {@link LocalFileStorage} 使用：它不再是子类，拿不到
+   * `protected` 的 `peekInstance`，但仍持有一份具体的 `MemoryStorage`
+   * 引用（而非 `StorageProvider` 接口类型），因此可以调用这类不在公开
+   * 接口 `StorageProvider` 上的"内部专用"方法。
+   *
+   * ⚠️ 与 {@link peekInstance} 同样的警告：不要通过任何 `StorageProvider`
+   * 接口类型暴露这个返回值——它是活引用，在 CAS 校验前被外部修改会破坏
+   * CAS 契约。只有持有具体 `MemoryStorage` 类型的调用方（即当前文件内部）
+   * 才能安全使用。
+   *
+   * @internal 不是公开 API，不要在应用代码中直接调用。
+   */
+  async saveInstanceAndPeek(
+    instance: WorkflowInstance,
+  ): Promise<WorkflowInstance> {
+    await this.saveInstance(instance);
+    // saveInstance 总是整体替换 Map 条目，因此写入后立刻能取到同一份 clone。
+    return this.instances.get(instance.instanceId) as WorkflowInstance;
+  }
+
+  /**
+   * CAS 更新并返回存入 Map 的那份 clone（更新成功时）。见
+   * {@link saveInstanceAndPeek} 的可见性警告。
+   * @internal 见 {@link saveInstanceAndPeek}。
+   */
+  async casUpdateInstanceAndPeek(
+    instance: WorkflowInstance,
+  ): Promise<{ updated: boolean; stored: WorkflowInstance | undefined }> {
+    const updated = await this.casUpdateInstance(instance);
+    return {
+      updated,
+      stored: updated
+        ? (this.instances.get(instance.instanceId) as WorkflowInstance)
+        : undefined,
+    };
+  }
+
+  /**
+   * 见 {@link saveInstanceAndPeek}；heartbeats 同样整体替换。
+   * @internal 见 {@link saveInstanceAndPeek}。
+   */
+  async saveHeartbeatAndPeek(state: HeartbeatState): Promise<HeartbeatState> {
+    await this.saveHeartbeat(state);
+    return this.heartbeats.get(state.heartbeatKey) as HeartbeatState;
+  }
+
+  /**
+   * 见 {@link saveInstanceAndPeek}。
+   * @internal 见 {@link saveInstanceAndPeek}。
+   */
+  async saveInstanceMetricsAndPeek(
+    metrics: InstanceMetrics,
+  ): Promise<InstanceMetrics> {
+    await this.saveInstanceMetrics(metrics);
+    return this.instanceMetrics.get(metrics.instanceId) as InstanceMetrics;
+  }
+
+  /**
+   * 见 {@link saveInstanceAndPeek}。`updateNodeMetrics` 保持"替换而非就地
+   * 修改"的语义（见该方法注释），因此这里返回的引用对之前借出的快照同样
+   * 安全——不会被这次调用就地改掉。
+   * @internal 见 {@link saveInstanceAndPeek}。
+   */
+  async updateNodeMetricsAndPeek(
+    instanceId: string,
+    nodeId: string,
+    metrics: NodeMetrics,
+  ): Promise<InstanceMetrics | undefined> {
+    await this.updateNodeMetrics(instanceId, nodeId, metrics);
+    return this.instanceMetrics.get(instanceId);
+  }
+
+  /**
+   * 返回存储中 metrics 记录的引用，不做深拷贝。供组合模式下的
+   * {@link LocalFileStorage} 使用，等价于 {@link peekInstanceMetrics}
+   * 但不依赖 `protected` 可见性。见 {@link saveInstanceAndPeek} 的警告。
+   * @internal 不是公开 API，不要在应用代码中直接调用。
+   */
+  peekInstanceMetricsForOwner(instanceId: string): InstanceMetrics | undefined {
+    return this.instanceMetrics.get(instanceId);
+  }
+
+  /**
+   * 返回存储中的事件引用，不做深拷贝。见 {@link getInstanceRef}；events
+   * 同样是整体替换（`saveEvent`/`putEvent` 都是 `set(id, 全新的 clone)`）。
+   * @internal 见 {@link getInstanceRef} 的可见性警告。
+   */
+  getEventRef(eventId: string): EventRecord | undefined {
+    return this.events.get(eventId);
+  }
+
+  /**
+   * 写入事件并返回存入 Map 的那份 clone 的引用。见 {@link saveInstanceAndPeek}。
+   * @internal 见 {@link saveInstanceAndPeek}。
+   */
+  async saveEventAndPeek(event: EventRecord): Promise<EventRecord> {
+    await this.saveEvent(event);
+    return this.events.get(event.id) as EventRecord;
+  }
+
+  /**
+   * 事件是否还在内存里。孤儿清扫用，不需要取值因此不 clone。
+   *
+   * 非 `protected`：组合模式下的 {@link LocalFileStorage} 通过一个具体的
+   * `MemoryStorage` 引用调用它，不再是子类关系。
+   * @internal 不是公开 API，不要在应用代码中直接调用。
+   */
+  hasEventInMemory(eventId: string): boolean {
     return this.events.has(eventId);
   }
 
   /**
    * 磁盘上的 heartbeat 文件名是 `<instanceId>:<nodeId>`，而内存 Map 以
    * `heartbeatKey` 为键，两者不一定相同，所以这里按文件名形态反查。
+   * @internal 不是公开 API，不要在应用代码中直接调用。
    */
-  protected hasHeartbeatFileKeyInMemory(fileKey: string): boolean {
+  hasHeartbeatFileKeyInMemory(fileKey: string): boolean {
     for (const hb of this.heartbeats.values()) {
       if (`${hb.instanceId}:${hb.nodeId}` === fileKey) return true;
     }
@@ -961,6 +1093,22 @@ export class MemoryStorage implements StorageProvider {
   }
 
   /**
+   * 见 {@link cleanupStaleInstances}，额外返回被清理的 id 列表。
+   *
+   * 组合模式下的 {@link LocalFileStorage} 用它精确删除对应文件，而不必
+   * 反过来 readdir 整个目录求差集。`lastCleanedInstanceIds` 字段本身仍是
+   * `protected`（供其他子类沿用旧路径），这里只是把同一份数据包成一个
+   * 具体类方法，不在 `StorageProvider` 接口上。
+   */
+  cleanupStaleInstancesWithIds(maxAgeMs: number): {
+    count: number;
+    ids: string[];
+  } {
+    const count = this.cleanupStaleInstances(maxAgeMs);
+    return { count, ids: this.lastCleanedInstanceIds };
+  }
+
+  /**
    * 获取存储统计信息
    */
   getStats(): { instanceCount: number; workflowCount: number } {
@@ -1017,6 +1165,14 @@ export class MemoryStorage implements StorageProvider {
     return deleted;
   }
 
+  /** 见 {@link cleanupStaleInstancesWithIds}，events 版本。 */
+  async cleanupStaleEventsWithIds(
+    retentionDays: number,
+  ): Promise<{ count: number; ids: string[] }> {
+    const count = await this.cleanupStaleEvents(retentionDays);
+    return { count, ids: this.lastCleanedEventIds };
+  }
+
   async cleanupExpiredHeartbeats(): Promise<number> {
     let cleaned = 0;
 
@@ -1039,5 +1195,14 @@ export class MemoryStorage implements StorageProvider {
     }
 
     return cleaned;
+  }
+
+  /** 见 {@link cleanupStaleInstancesWithIds}，heartbeats 版本。 */
+  async cleanupExpiredHeartbeatsWithIds(): Promise<{
+    count: number;
+    ids: string[];
+  }> {
+    const count = await this.cleanupExpiredHeartbeats();
+    return { count, ids: this.lastCleanedHeartbeatKeys };
   }
 }

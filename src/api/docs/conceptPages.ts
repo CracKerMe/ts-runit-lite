@@ -390,8 +390,8 @@ const TOPICS: ConceptTopic[] = [
         id: "heartbeat",
         title: "Heartbeat 跟踪",
         params: [],
-        body: `<p>长时间运行的 <code>action</code> 节点可通过 <code>heartbeat</code> 配置定期上报进度。<code>HeartbeatManager</code> 通过 <code>StorageProvider</code> 保存和恢复 Heartbeat 状态：使用默认 <code>LocalFileStorage</code> 时可跨进程重启恢复，使用 <code>MemoryStorage</code> 时仅在当前进程生命周期内保留。</p>
-<p>实现见 <code>src/engine/HeartbeatManager.ts</code>。</p>`,
+        body: `<p>长时间运行的 <code>action</code> 节点可通过 <code>heartbeat</code> 配置定期上报进度。<code>HeartbeatTracker</code> 通过 <code>StorageProvider</code> 保存和恢复 Heartbeat 状态：使用默认 <code>LocalFileStorage</code> 时可跨进程重启恢复，使用 <code>MemoryStorage</code> 时仅在当前进程生命周期内保留。</p>
+<p>实现见 <code>src/engine/HeartbeatTracker.ts</code>。</p>`,
       },
     ],
   },
@@ -407,7 +407,7 @@ const TOPICS: ConceptTopic[] = [
         params: [],
         body: `<p><code>WORKER_POOL_ENABLED=true</code> 时，<code>http</code> 节点卸载到 worker 线程执行。每个 worker 有稳定 <code>workerId</code>；同一实例的后续任务优先路由回已绑定的 worker（<code>WORKER_STICKY_ENABLED</code>）。</p>
 <p>绑定的 worker 忙碌时会回退到任意空闲 worker —— <strong>亲和性只做优化，不会阻塞任务</strong>。worker 退出或池关闭时释放绑定，避免实例被绑死在已终止的线程上。</p>
-<p>实现见 <code>src/engine/worker/WorkerPool.ts</code> 与 <code>src/engine/StickyExecutionManager.ts</code>。</p>`,
+<p>实现见 <code>src/engine/worker/WorkerPool.ts</code> 与 <code>src/engine/StickyExecutionPolicy.ts</code>。</p>`,
       },
       {
         id: "task-queue",
@@ -453,6 +453,23 @@ const TOPICS: ConceptTopic[] = [
 <div class="callout">
   <p>归档文件是冷数据，<strong>不会自动参与实例查询或启动恢复</strong>。</p>
 </div>`,
+      },
+      {
+        id: "storage-middleware",
+        title: "存储中间件",
+        params: [],
+        body: `<p><code>withStorageMetrics(storage, onTiming)</code> 与 <code>withStorageCache(storage, options)</code> 可包装任意 <code>StorageProvider</code> 实现，均从包根与 <code>src/storage/index.ts</code> 导出。两者都基于 <code>Proxy</code> 透明转发所有方法（包括未来新增到接口的方法），不需要为 40+ 方法的接口手写委托。</p>
+<pre><code>import { withStorageCache, withStorageMetrics } from "ts-workflow-engine-lite";
+
+let storage = await createStorage();
+storage = withStorageMetrics(storage, (method, durationMs) =&gt; {
+  metrics.record(\`storage.\${method}\`, durationMs);
+});
+storage = withStorageCache(storage, { ttlMs: 5000 });</code></pre>
+<div class="callout">
+  <p><code>withStorageCache</code> 默认只对 <code>loadInstance</code>/<code>loadWorkflow</code> 做单进程读缓存 —— 多个进程共享同一存储后端时不安全，因为它没有跨进程失效信号。</p>
+</div>
+<p>实现见 <code>src/storage/middleware.ts</code>。</p>`,
       },
     ],
     codeGroups: [

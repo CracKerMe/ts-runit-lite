@@ -6,7 +6,7 @@ import { appendHistory } from "../model/Instance";
 import type { TaskNode } from "../model/Workflow";
 import type { StorageProvider } from "../storage/StorageProvider";
 import { Logger } from "../utils/Logger";
-import type { HeartbeatManager } from "./HeartbeatManager";
+import type { HeartbeatTracker } from "./HeartbeatTracker";
 import { dispatchControlNode } from "./nodeDispatch/controlNodes";
 import {
   getWorkerPool,
@@ -30,7 +30,7 @@ export async function execute(
   onComplete: (nextNodes: string[]) => void,
   onError: (error: Error) => void,
   storage?: StorageProvider,
-  heartbeatManager?: HeartbeatManager,
+  heartbeatTracker?: HeartbeatTracker,
 ) {
   const logEntry: ExecutionLog = {
     nodeId: node.id,
@@ -74,7 +74,7 @@ export async function execute(
     startTime,
     onComplete,
     storage,
-    heartbeatManager,
+    heartbeatTracker,
   };
 
   try {

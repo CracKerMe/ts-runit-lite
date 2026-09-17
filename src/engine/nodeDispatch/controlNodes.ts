@@ -20,7 +20,7 @@ import {
   type TransformNodeConfig,
   TransformNodeExecutor,
 } from "../executors/TransformNodeExecutor";
-import { HeartbeatManager } from "../HeartbeatManager";
+import { HeartbeatTracker } from "../HeartbeatTracker";
 import { taskQueueManager } from "../TaskQueueManager";
 import {
   completeStandardNode,
@@ -34,7 +34,7 @@ export async function dispatchControlNode(
   ctx: NodeDispatchContext,
 ): Promise<true | undefined> {
   const { node, instance, logEntry, startTime, onComplete, storage } = ctx;
-  const engineHeartbeatManager = ctx.heartbeatManager;
+  const engineHeartbeatTracker = ctx.heartbeatTracker;
 
   if (node.type === "condition") {
     const conditionConfig = requireNodeConfig<ConditionNodeConfig>(
@@ -170,7 +170,7 @@ export async function dispatchControlNode(
         // Use sandboxed evaluation instead of raw new Function()
         // Workflow definitions are trusted but defense-in-depth is better.
         // context 里同时以 `instance` 和 `context.instance` 两种方式暴露同一个
-        // 对象，与 BreakpointManager 里 evaluateConditionSandboxed 的约定保持一致。
+        // 对象，与 BreakpointTracker 里 evaluateConditionSandboxed 的约定保持一致。
         // evaluateActionSandboxed 在配置了 worker 隔离时会把求值挪到独立线程
         // （真正的独立堆、超时后可硬终止）；未配置时透明回退到进程内 vm。
         const fnBody = config.action;
@@ -186,7 +186,7 @@ export async function dispatchControlNode(
     const heartbeatConfig = node.heartbeat;
     const heartbeatInterval = heartbeatConfig?.interval;
     const heartbeatMgr =
-      engineHeartbeatManager ?? new HeartbeatManager(storage);
+      engineHeartbeatTracker ?? new HeartbeatTracker(storage);
     if (heartbeatInterval) {
       const heartbeatTimeout = heartbeatConfig?.timeout;
       heartbeatKey = await heartbeatMgr.start(

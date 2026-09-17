@@ -36,7 +36,7 @@ interface IndexEntry {
   attributes: Map<string, SearchAttributeValue>;
 }
 
-export class SearchAttributeManager {
+export class SearchAttributeTracker {
   private definitions: Map<string, SearchAttributeDefinition> = new Map();
   /** Indexed by instanceId — a workflow can have many concurrent instances. */
   private indexes: Map<string, IndexEntry> = new Map();
@@ -195,4 +195,4 @@ export class SearchAttributeManager {
   }
 }
 
-export const searchAttributeManager = new SearchAttributeManager();
+export const searchAttributeTracker = new SearchAttributeTracker();

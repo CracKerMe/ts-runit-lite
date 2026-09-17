@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BreakpointManager } from "../../debug/BreakpointManager";
+import { BreakpointTracker } from "../../debug/BreakpointTracker";
 import { WorkflowDebugger } from "../../debug/WorkflowDebugger";
 
-describe("BreakpointManager", () => {
+describe("BreakpointTracker", () => {
   it("should match breakpoints by instance and node", () => {
-    const manager = new BreakpointManager();
+    const manager = new BreakpointTracker();
     const breakpoint = manager.add("instance-1", "node-1");
 
     expect(manager.shouldBreak("instance-1", "node-1")).toEqual(breakpoint);
@@ -12,7 +12,7 @@ describe("BreakpointManager", () => {
   });
 
   it("should evaluate conditions against context", () => {
-    const manager = new BreakpointManager();
+    const manager = new BreakpointTracker();
     manager.add("instance-1", "node-1", "context.amount > 100");
 
     expect(

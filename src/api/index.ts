@@ -18,5 +18,5 @@ export { generateNodeDocHtml, generateNodeIndexHtml } from "./docs/nodePages";
 export { generateApiDocsHtml, openApiSpec } from "./openapi";
 export { generateWelcomeHtml } from "./welcomePage";
 export type { ApiServerConfig } from "./server";
-export { startApiServer, startServer } from "./server";
+export { startApiServer } from "./server";
 export { WebhookManager } from "./WebhookManager";

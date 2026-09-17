@@ -2,6 +2,8 @@
 
 一个用于嵌入式、单进程应用的轻量级 TypeScript 工作流引擎。它包含工作流执行、REST API、事件、Cron 调度、重试和本地文件持久化。本地使用无需依赖 Redis 或数据库。
 
+> npm 包名为 `ts-workflow-engine-lite`；GitHub 仓库名为 `ts-runit-lite`，这是历史遗留原因，为保留已有链接、Star 和 Fork 而保持不变。
+
 项目介绍页：**[在线访问落地页](https://crackerme.github.io/ts-runit-lite/)**，可查看引擎的可视化总览
 （DAG 执行动画、实例生命周期与示例集）；也支持离线使用：在浏览器中打开 [`index.html`](./index.html)。
 
@@ -18,7 +20,7 @@ pnpm add ts-workflow-engine-lite
 该包作为 ES 模块发布。在 JavaScript 或 TypeScript 中使用 ESM 导入：
 
 ```js
-import { bootstrap, destroyContainer } from "ts-workflow-engine-lite";
+import { bootstrap } from "ts-workflow-engine-lite";
 ```
 
 TypeScript 使用者可以使用 `moduleResolution: "NodeNext"` 或 `"Bundler"`。此仓库在其 TypeScript 源码中保留了无扩展名的相对导入；构建步骤仅会将所需的 `.js` 扩展名添加到生成的 `dist` 文件中。
@@ -79,14 +81,14 @@ try {
 
 ### 我应该使用哪个初始化 API？
 
-该包提供了两种获取运行中 `WorkflowEngineV2` 的方式：
+该包提供了两种获取运行中 `WorkflowEngine` 的方式：
 
-| API                                                                              | 适用场景                                                                                                                                                                                                                                                                                                           |
-| -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `bootstrap(options)`                                                             | **默认选择。** 一次调用即可配置存储、密钥管理器、可选的线程池和归档功能以及优雅关闭，然后返回 `{ engine, container }`。与 CLI 和上述快速入门中的用法一致。                                                                                                                                                         |
-| `createContainer(options)` + `setContainer(container)` + `createEngine(options)` | 当你需要更精细地控制初始化顺序（例如，在创建容器和引擎之间注册工作流或自定义 `SecretManager`），或者你需要针对自己管理的容器组合多个引擎时使用。`createEngine()` 会从 `setContainer()` 设置的全进程单例中读取其容器——请先调用 `createContainer` 和 `setContainer`，否则会抛出 `"Container not initialized"` 错误。 |
+| API                     | 适用场景                                                                                                                                                                                    |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bootstrap(options)`    | **默认选择。** 一次调用即可配置存储、密钥管理器、可选的线程池和归档功能以及优雅关闭，然后返回 `{ engine, container }`。与 CLI 和上述快速入门中的用法一致。                                  |
+| `createEngine(options)` | 当你已经在本进程中调用过一次 `bootstrap()`，并想创建共享同一个全进程容器的第二个引擎时使用（例如并行跑两套工作流）。若尚未调用过 `bootstrap()`，会抛出 `"Container not initialized"` 错误。 |
 
-`bootstrap()` 内部也会调用 `setContainer(container)`，因此它返回的 `container` 与 `createEngine()` 读取的全进程单例是同一个——你仍然可以在之后再次调用 `createEngine()`（例如，创建共享该容器的第二个引擎），而无需自己调用 `setContainer`。
+`createContainer` / `setContainer` / `getContainer` 是 `bootstrap()` 内部使用的接线函数，不属于公开导出——进程容器只能通过 `bootstrap()` 创建。
 
 ## 运行示例
 
@@ -151,6 +153,22 @@ app.listen(3000);
 | -------- | ------------------------ | -------- |
 | `file`   | 默认的单进程运行时       | 支持     |
 | `memory` | 测试和有意为之的临时用途 | 不支持   |
+
+`registerBuiltinStorageAdapters()`（[`src/storage/database-adapters.ts`](./src/storage/database-adapters.ts)）还注册了可选的 `sqlite` 和 `postgres` 适配器。它们将状态保存在内存中，并定期将完整的单份状态快照持久化到 `better-sqlite3` 文件或 Postgres 表中，而不是像 `file` 模式那样按记录分别写文件——这是一种更简单的持久化模型，主要适用于你已经在运维该数据库、希望状态存放在其中而非本地磁盘的场景。它们需要可选依赖 `better-sqlite3` 或 `pg`，Postgres 还需要 `connectionString`（或 `POSTGRES_STORAGE_URL`）。若要接入完全不同的后端，请实现 [`src/storage/StorageProvider.ts`](./src/storage/StorageProvider.ts) 中的能力接口，并通过 `registerStorageAdapter()` 注册。
+
+横切关注点（计时、缓存）可以包装任意 `StorageProvider`，无需改动底层适配器：
+
+```ts
+import { withStorageCache, withStorageMetrics } from "ts-workflow-engine-lite";
+
+let storage = await createStorage();
+storage = withStorageMetrics(storage, (method, durationMs) => {
+  metrics.record(`storage.${method}`, durationMs);
+});
+storage = withStorageCache(storage, { ttlMs: 5000 });
+```
+
+两者都通过 `Proxy` 包装存储实例，因此会转发所有方法（包括未来新增到 `StorageProvider` 的方法），不需要各自维护一份接口副本。`withStorageCache` 默认只对 `loadInstance`/`loadWorkflow` 做单进程读缓存——多个进程共享同一存储后端时不安全，因为它没有跨进程失效信号。
 
 在测试环境之外，默认启用本地文件持久化。运行时状态存储在 `.ts-workflow-engine-data/` 目录下，每条记录使用一个 JSON 文件，并通过原子化的临时文件替换来写入：
 
@@ -292,13 +310,43 @@ ARCHIVE_CLEANUP_INTERVAL_MS=21600000
 
 当 PostgreSQL 已经是事实上的记录系统，并且你希望队列、锁定和工作流状态共享同一个事务型数据库时，请选择支持 PostgreSQL 的引擎，例如 [pg-workflows](https://github.com/boazsegev/pg-workflows)。当多个进程必须通过 Postgres 进行协调时，它是更好的选择；当期望的部署边界是单个嵌入式服务和本地文件时，它的吸引力较小。
 
-| 需求                                          | 最佳选择                  |
-| --------------------------------------------- | ------------------------- |
-| 嵌入式、单进程、低运营开销                    | `ts-workflow-engine-lite` |
-| 分布式 Worker、长生命周期计时器、平台化工作流 | Temporal                  |
-| Postgres 原生协调和事务状态                   | pg-workflows              |
+如果你的实例数量或单实例节点历史持续增长，超出单进程能够舒适扫描和持久化的范围，不要强行迁就默认存储——要么注册一个基于你已经在运维的数据库的[自定义存储适配器](#存储模式)，要么迁移到上述平台之一。引擎本身也不提供数据库级别的租户隔离或授权，参见[多租户使用模式](#多租户使用模式)了解仍需在应用边界自行实现的部分。
 
-关键的界限不在于“有多少种节点类型可用”，而在于你的工作流所需的持久性和协调模型。
+| 需求                                          | 最佳选择                                      |
+| --------------------------------------------- | --------------------------------------------- |
+| 嵌入式、单进程、低运营开销                    | `ts-workflow-engine-lite`                     |
+| 分布式 Worker、长生命周期计时器、平台化工作流 | Temporal                                      |
+| Postgres 原生协调和事务状态                   | pg-workflows                                  |
+| 超大实例量 / 长节点历史，单机部署             | 自定义存储适配器（参见[存储模式](#存储模式)） |
+
+关键的界限不在于”有多少种节点类型可用”，而在于你的工作流所需的持久性和协调模型。
+
+## 测试你的工作流
+
+`testWorkflow()` 会在一次性的内存引擎上运行工作流定义，并自动 mock 掉非 `action` 节点（`http`、`sql`、`queue` 等），因此测试无需真实的外部集成：
+
+```ts
+import { testWorkflow } from "ts-workflow-engine-lite";
+
+const result = await testWorkflow(workflow, {
+  mockNodes: { "llm-draft": { content: "mocked reply" } },
+});
+
+result.expectCompleted().expectOutput("finalize", { approved: true });
+
+await result.cleanup();
+```
+
+`MutationTester` 会对工作流定义施加变异（删除节点、取反条件、破坏配置、清零超时等），并报告你的工作流自身的错误处理和校验实际捕获了哪些变异——从而暴露出纯"快乐路径"测试容易漏掉的薄弱点，例如缺失的 `failureNext` 或未校验的条件：
+
+```ts
+import { MutationTester } from "ts-workflow-engine-lite";
+
+const report = await new MutationTester().runMutations(workflow);
+console.log(`${report.killed}/${report.totalMutations} mutations caught`);
+```
+
+两者均从包根导出；更多用法参见 [`src/__tests__/testing/`](./src/__tests__/testing/)。
 
 ## 开发脚本
 
@@ -350,6 +398,7 @@ pnpm add ts-workflow-engine-lite express cors helmet morgan ws swagger-ui-dist
 | [event-timeout-workflow.ts](./examples/event-timeout-workflow.ts) | `pnpm example event-timeout-workflow` | 事件等待、超时与回滚路径            |
 | [instance-control-api.ts](./examples/instance-control-api.ts)     | `pnpm example instance-control-api`   | 重试 / 跳过 / 补偿的实例控制 API    |
 | [output-injection.ts](./examples/output-injection.ts)             | `pnpm example output-injection`       | 通过 ${...} 引用上游节点输出        |
+| [llm-approval-workflow.ts](./examples/llm-approval-workflow.ts)   | `pnpm example llm-approval-workflow`  | LLM 起草、人工审批、超时降级        |
 
 ## 许可证
 

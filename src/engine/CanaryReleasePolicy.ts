@@ -27,7 +27,7 @@ const DEFAULT_RULES: Required<Omit<PromotionRules, "autoPromote">> = {
   evaluationWindowMs: 60 * 60 * 1000,
 };
 
-export class CanaryReleaseManager {
+export class CanaryReleasePolicy {
   private evaluationTimer?: NodeJS.Timeout;
 
   constructor(

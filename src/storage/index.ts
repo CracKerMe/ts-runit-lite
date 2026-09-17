@@ -38,6 +38,11 @@ export {
   unregisterStorageAdapter,
 } from "./registry";
 export { registerBuiltinStorageAdapters } from "./builtin-adapters";
+export {
+  type CacheStorageMiddlewareOptions,
+  withStorageCache,
+  withStorageMetrics,
+} from "./middleware";
 
 import { MemoryStorage } from "./MemoryStorage";
 import { LocalFileStorage } from "./LocalFileStorage";

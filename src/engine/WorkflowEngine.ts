@@ -23,15 +23,15 @@ import { Logger } from "../utils/Logger";
 import { destroyConcurrencyControl } from "./ConcurrencyControl";
 import { InstanceNotFoundError, WorkflowNotFoundError } from "./errors";
 import {
-  CanaryReleaseManager,
+  CanaryReleasePolicy,
   type CanaryStatus,
   type PromotionEvaluation,
-} from "./CanaryReleaseManager";
+} from "./CanaryReleasePolicy";
 import {
   type ContinueAsNewOptions,
   type ContinueAsNewResult,
-  continueAsNewManager,
-} from "./ContinueAsNewManager";
+  continueAsNewTracker,
+} from "./ContinueAsNewTracker";
 import {
   DataValidationError,
   getValidationMode,
@@ -42,7 +42,7 @@ import {
   type DryRunResult as SandboxDryRunResult,
 } from "./DryRunExecutor";
 import { ExecutionOrchestrator } from "./ExecutionOrchestrator";
-import { HeartbeatManager } from "./HeartbeatManager";
+import { HeartbeatTracker } from "./HeartbeatTracker";
 import { InstanceManager } from "./InstanceManager";
 import { LifecycleManager } from "./LifecycleManager";
 import { WorkflowInstanceControl } from "./WorkflowInstanceControl";
@@ -75,7 +75,7 @@ export interface InstanceVersionMigrationResult {
 }
 
 /**
- * 工作流引擎 V2 - 支持依赖注入和模块化架构
+ * 工作流引擎 - 支持依赖注入和模块化架构
  */
 export class WorkflowEngine {
   private instanceManager: InstanceManager;
@@ -84,8 +84,8 @@ export class WorkflowEngine {
   private eventCoordinator: EventCoordinator;
   private executionOrchestrator: ExecutionOrchestrator;
   private leaseStore: LeaseStore;
-  private heartbeatManager: HeartbeatManager;
-  private canaryReleaseManager: CanaryReleaseManager;
+  private heartbeatTracker: HeartbeatTracker;
+  private canaryReleasePolicy: CanaryReleasePolicy;
   private dryRunExecutor: DryRunExecutor;
   private workflowPersistence: WorkflowPersistenceCoordinator;
   private workflowControl: WorkflowInstanceControl;
@@ -115,10 +115,10 @@ export class WorkflowEngine {
     });
     this.eventCoordinator = new EventCoordinator(eventBus, storage);
     this.leaseStore = createLeaseStore();
-    this.heartbeatManager = new HeartbeatManager(storage, this.leaseHolderId);
+    this.heartbeatTracker = new HeartbeatTracker(storage, this.leaseHolderId);
     // 从存储恢复的心跳没有可序列化的 onTimeout 回调，注入引擎级兜底，
     // 否则重启后超时只会静默清理定时器，卡住的节点永远不会被判失败。
-    this.heartbeatManager.setDefaultOnTimeout((instanceId, nodeId) => {
+    this.heartbeatTracker.setDefaultOnTimeout((instanceId, nodeId) => {
       Logger.error(
         instanceId,
         nodeId,
@@ -141,9 +141,9 @@ export class WorkflowEngine {
         this.start(workflowId, context, {
           parentInstanceId: options?.parentInstanceId,
         }),
-      this.heartbeatManager,
+      this.heartbeatTracker,
     );
-    this.canaryReleaseManager = new CanaryReleaseManager(this.storage, this);
+    this.canaryReleasePolicy = new CanaryReleasePolicy(this.storage, this);
     this.dryRunExecutor = new DryRunExecutor((workflowId) =>
       this.workflowRegistry.getWorkflow(workflowId),
     );
@@ -170,11 +170,11 @@ export class WorkflowEngine {
     await this.instanceManager.loadFromStorage();
 
     // Restore heartbeats from storage
-    await this.heartbeatManager.restoreHeartbeats();
+    await this.heartbeatTracker.restoreHeartbeats();
 
     // Start lifecycle management
     this.lifecycleManager.start(() => this.instanceManager.getInstancesMap());
-    this.canaryReleaseManager.startEvaluationLoop();
+    this.canaryReleasePolicy.startEvaluationLoop();
 
     if (options?.resumeRunningInstances) {
       this.resumeRunningInstances();
@@ -361,19 +361,19 @@ export class WorkflowEngine {
     instanceId: string,
     options: ContinueAsNewOptions = {},
   ): ContinueAsNewResult {
-    return continueAsNewManager.prepareContinueAsNew(instanceId, options);
+    return continueAsNewTracker.prepareContinueAsNew(instanceId, options);
   }
 
   /**
    * 工作流完成时的回调：若存在待处理的续期，则真正启动新实例。
    */
   private async handleContinueAsNew(instance: WorkflowInstance): Promise<void> {
-    if (!continueAsNewManager.hasPendingContinuation(instance.instanceId)) {
+    if (!continueAsNewTracker.hasPendingContinuation(instance.instanceId)) {
       return;
     }
 
-    const options = continueAsNewManager.getContinuation(instance.instanceId);
-    continueAsNewManager.clearContinuation(instance.instanceId);
+    const options = continueAsNewTracker.getContinuation(instance.instanceId);
+    continueAsNewTracker.clearContinuation(instance.instanceId);
     if (!options) return;
 
     const targetWorkflowId = options.workflowId ?? instance.workflowId;
@@ -659,7 +659,7 @@ export class WorkflowEngine {
     percent: number,
     rules?: PromotionRules,
   ): Promise<void> {
-    await this.canaryReleaseManager.startCanaryRelease(
+    await this.canaryReleasePolicy.startCanaryRelease(
       workflowId,
       version,
       percent,
@@ -668,15 +668,15 @@ export class WorkflowEngine {
   }
 
   async promoteCanary(workflowId: string): Promise<void> {
-    await this.canaryReleaseManager.promoteCanary(workflowId);
+    await this.canaryReleasePolicy.promoteCanary(workflowId);
   }
 
   async rollbackCanary(workflowId: string): Promise<void> {
-    await this.canaryReleaseManager.rollbackCanary(workflowId);
+    await this.canaryReleasePolicy.rollbackCanary(workflowId);
   }
 
   async getCanaryStatus(workflowId: string): Promise<CanaryStatus> {
-    return this.canaryReleaseManager.getCanaryStatus(workflowId);
+    return this.canaryReleasePolicy.getCanaryStatus(workflowId);
   }
 
   async migrateInstanceVersion(
@@ -776,7 +776,7 @@ export class WorkflowEngine {
   async evaluateCanaryPromotion(
     workflowId: string,
   ): Promise<PromotionEvaluation> {
-    return this.canaryReleaseManager.evaluatePromotion(workflowId);
+    return this.canaryReleasePolicy.evaluatePromotion(workflowId);
   }
 
   getReleasePolicy(workflowId: string): ReleasePolicy | undefined {
@@ -787,10 +787,10 @@ export class WorkflowEngine {
    * 销毁引擎，清理资源
    */
   destroy(): void {
-    this.canaryReleaseManager.stopEvaluationLoop();
+    this.canaryReleasePolicy.stopEvaluationLoop();
     this.lifecycleManager.destroy();
     this.eventCoordinator.destroy();
-    this.heartbeatManager.stopAll();
+    this.heartbeatTracker.stopAll();
     // 全局并发控制器的清理定时器此前无人负责，destroy() 后进程仍被钉住
     destroyConcurrencyControl();
     Logger.info("system", "engine", "WorkflowEngine destroyed");

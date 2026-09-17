@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { MemoryStorage } from "../../storage/MemoryStorage";
-import { HeartbeatManager } from "../../engine/HeartbeatManager";
+import { HeartbeatTracker } from "../../engine/HeartbeatTracker";
 import { InstanceManager } from "../../engine/InstanceManager";
 import { LifecycleManager } from "../../engine/LifecycleManager";
 
@@ -36,7 +36,7 @@ describe("WorkflowEngine - Crash Recovery", () => {
     const workerId = "worker-1";
 
     // Phase 1: Start heartbeat
-    const hbManager1 = new HeartbeatManager(storage, workerId);
+    const hbManager1 = new HeartbeatTracker(storage, workerId);
     const hbKey = await hbManager1.start({
       instanceId: "instance-1",
       nodeId: "node-1",
@@ -48,7 +48,7 @@ describe("WorkflowEngine - Crash Recovery", () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
 
     // Phase 2: Simulate crash and restart
-    const hbManager2 = new HeartbeatManager(storage, workerId);
+    const hbManager2 = new HeartbeatTracker(storage, workerId);
     await hbManager2.restoreHeartbeats();
 
     // Phase 3: Verify heartbeat is restored
@@ -76,7 +76,7 @@ describe("WorkflowEngine - Crash Recovery", () => {
     await storage.saveHeartbeat(expiredState);
 
     // Phase 2: Startup heartbeat manager on new process
-    const hbManager = new HeartbeatManager(storage, "new-worker");
+    const hbManager = new HeartbeatTracker(storage, "new-worker");
     await hbManager.restoreHeartbeats();
 
     // Phase 3: Expired heartbeat should NOT be active
@@ -146,7 +146,7 @@ describe("WorkflowEngine - Crash Recovery", () => {
     instance.status = "running";
     await manager1.updateInstance(instance);
 
-    const hbManager1 = new HeartbeatManager(storage, "worker-1");
+    const hbManager1 = new HeartbeatTracker(storage, "worker-1");
     await hbManager1.start({
       instanceId: instance.instanceId,
       nodeId: "node-1",
@@ -160,7 +160,7 @@ describe("WorkflowEngine - Crash Recovery", () => {
     const manager2 = new InstanceManager(storage);
     await manager2.loadFromStorage();
 
-    const hbManager2 = new HeartbeatManager(storage, "worker-1");
+    const hbManager2 = new HeartbeatTracker(storage, "worker-1");
     await hbManager2.restoreHeartbeats();
 
     void new LifecycleManager(storage, {
@@ -207,7 +207,7 @@ describe("WorkflowEngine - Crash Recovery", () => {
     expect(recovered).toBeDefined();
     expect(recovered?.status).toBe("running");
 
-    const hbManager = new HeartbeatManager(storage, "worker-1");
+    const hbManager = new HeartbeatTracker(storage, "worker-1");
     await hbManager.restoreHeartbeats();
 
     // Heartbeat was not saved, so won't be active

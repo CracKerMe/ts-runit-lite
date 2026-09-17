@@ -1,6 +1,6 @@
 {
   "name": "ts-workflow-engine-lite",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Lightweight TypeScript workflow engine with a REST API and local file persistence for single-process applications.",
   "keywords": [
     "ai-workflow",
