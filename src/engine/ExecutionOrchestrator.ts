@@ -10,7 +10,12 @@ import {
   type RetryPolicy,
   shouldRetry,
 } from "../model/RetryPolicy";
-import type { TaskNode, WorkflowDefinition } from "../model/Workflow";
+import type {
+  TaskNode,
+  WaitNodeConfig,
+  WorkflowDefinition,
+} from "../model/Workflow";
+import { getExternalTimerAdapter } from "../timers/ExternalTimerAdapter";
 import {
   context as otelContext,
   otelTraceId,
@@ -498,6 +503,147 @@ export class ExecutionOrchestrator {
             );
             reject(err);
           };
+
+          if (node.type === "wait" && this.eventCoordinator) {
+            const waitConfig = (node.config as WaitNodeConfig | undefined) ?? {};
+            const externalTimerEnabled = waitConfig.externalTimer?.enabled === true;
+            const externalTimer = externalTimerEnabled
+              ? getExternalTimerAdapter()
+              : null;
+
+            if (externalTimer) {
+              const waitMs = resolveWaitDurationMs(node, instance);
+              if (waitMs === undefined) {
+                void onComplete(node.next || []);
+                return;
+              }
+
+              const startTime = Date.now();
+              const eventType =
+                waitConfig.externalTimer?.eventType ||
+                `workflow.wait.${instance.instanceId}.${node.id}`;
+
+              if (!instance.state) {
+                instance.state = { nodes: {} };
+              }
+              if (!instance.state.nodes) {
+                instance.state.nodes = {};
+              }
+
+              const nodeState = (instance.state.nodes[node.id] ?? {}) as {
+                deadline?: number;
+                externalTimer?: {
+                  timerKey: string;
+                  eventType: string;
+                  triggerAt: number;
+                  provider?: string;
+                };
+              };
+              const deadline =
+                typeof nodeState.deadline === "number"
+                  ? nodeState.deadline
+                  : Date.now() + waitMs;
+              const timerKey = `wait:${instance.instanceId}:${node.id}:${deadline}`;
+              const shouldSchedule =
+                !nodeState.externalTimer ||
+                nodeState.externalTimer.timerKey !== timerKey ||
+                nodeState.externalTimer.eventType !== eventType;
+
+              instance.state.nodes[node.id] = {
+                ...nodeState,
+                deadline,
+                externalTimer: {
+                  timerKey,
+                  eventType,
+                  triggerAt: deadline,
+                  provider: externalTimer.name,
+                },
+              };
+
+              await this.instanceManager.updateInstance(instance);
+
+              if (shouldSchedule) {
+                await externalTimer.schedule({
+                  timerKey,
+                  instanceId: instance.instanceId,
+                  nodeId: node.id,
+                  workflowId: instance.workflowId,
+                  eventType,
+                  triggerAt: deadline,
+                  payload: {
+                    instanceId: instance.instanceId,
+                    workflowId: instance.workflowId,
+                    nodeId: node.id,
+                    timerKey,
+                  },
+                });
+              }
+
+              this.eventCoordinator
+                .waitForEvent(instance.instanceId, node.id, eventType, {
+                  requireInstanceIdMatch: true,
+                  onEvent: (payload: any) => {
+                    void (async () => {
+                      const endTime = Date.now();
+                      const duration = endTime - startTime;
+
+                      if (!instance.state) {
+                        instance.state = { nodes: {} };
+                      }
+                      if (!instance.state.nodes) {
+                        instance.state.nodes = {};
+                      }
+                      instance.state.nodes[node.id] = {
+                        output: {
+                          waited: Math.max(0, deadline - startTime),
+                          deadline,
+                          via: "external-timer",
+                          eventType,
+                          payload,
+                        },
+                      };
+
+                      recordNodeExecution(
+                        instance.workflowId,
+                        node.id,
+                        node.type,
+                        "success",
+                        duration / 1000,
+                      );
+
+                      if (storage) {
+                        await storage.updateNodeMetrics(
+                          instance.instanceId,
+                          node.id,
+                          {
+                            nodeId: node.id,
+                            nodeType: node.type,
+                            startTime,
+                            endTime,
+                            duration,
+                            status: "completed",
+                            retryCount: instance.retries?.[node.id] || 0,
+                          },
+                        );
+                      }
+
+                      await this.instanceManager.updateInstance(instance);
+                      await onComplete(node.next || []);
+                    })().catch((err) => {
+                      void onError(
+                        err instanceof Error ? err : new Error(String(err)),
+                      );
+                    });
+                  },
+                })
+                .catch((err) => {
+                  void onError(
+                    err instanceof Error ? err : new Error(String(err)),
+                  );
+                });
+              return;
+            }
+          }
 
           // 处理事件节点
           if (

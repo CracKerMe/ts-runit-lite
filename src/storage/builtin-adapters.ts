@@ -1,6 +1,7 @@
 import { registerStorageAdapter } from "./registry";
 import { MemoryStorage } from "./MemoryStorage";
 import { LocalFileStorage } from "./LocalFileStorage";
+import { registerDatabaseStorageAdapters } from "./database-adapters";
 
 /**
  * Register the built-in storage adapters: "memory" and "local-file".
@@ -24,4 +25,6 @@ export function registerBuiltinStorageAdapters(): void {
     await storage.connect();
     return storage;
   });
+
+  registerDatabaseStorageAdapters();
 }

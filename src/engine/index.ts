@@ -52,6 +52,8 @@ export {
   type StickyWorker,
 } from "./StickyExecutionManager";
 export {
+  type InstanceVersionMigrationOptions,
+  type InstanceVersionMigrationResult,
   type WaitForCompletionOptions,
   WorkflowEngine,
 } from "./WorkflowEngine";

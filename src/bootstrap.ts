@@ -20,6 +20,8 @@ import { WorkflowEngine } from "./engine/WorkflowEngine";
 import { setShutdownInstance, setupGracefulShutdown } from "./lifecycle";
 import { setupNotificationChannelsFromEnv } from "./notification/index";
 import { ArchiveManager } from "./storage/ArchiveManager";
+import type { ExternalTimerAdapter } from "./timers/ExternalTimerAdapter";
+import { setExternalTimerAdapter } from "./timers/ExternalTimerAdapter";
 import { Logger, type LogLevel } from "./utils/Logger";
 import { disposeSecretManager, setSecretManager } from "./utils/secrets";
 import { SecretManager } from "./utils/SecretManager";
@@ -37,6 +39,7 @@ export interface BootstrapOptions {
   storageType?: "memory" | "file";
   storageDirectory?: string;
   logLevel?: LogLevel;
+  externalTimerAdapter?: ExternalTimerAdapter | null;
 }
 
 /**
@@ -57,6 +60,7 @@ export async function bootstrap(
   if (options.logLevel) {
     Logger.setLevel(options.logLevel);
   }
+  setExternalTimerAdapter(options.externalTimerAdapter ?? null);
   Logger.info("system", "bootstrap", "Starting application bootstrap...");
 
   // 1. 验证配置
