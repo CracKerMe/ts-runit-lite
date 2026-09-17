@@ -55,6 +55,25 @@ export interface WaitForCompletionOptions {
   signal?: AbortSignal;
 }
 
+export interface InstanceVersionMigrationOptions {
+  targetVersion: string;
+  strategy?: "strict" | "remap" | "restart";
+  nodeMapping?: Record<string, string>;
+  autoResume?: boolean;
+}
+
+export interface InstanceVersionMigrationResult {
+  instanceId: string;
+  workflowId: string;
+  fromVersion?: string;
+  toVersion: string;
+  strategy: "strict" | "remap" | "restart";
+  previousStatus: string;
+  resumed: boolean;
+  previousNodes: string[];
+  currentNodes: string[];
+}
+
 /**
  * 工作流引擎 V2 - 支持依赖注入和模块化架构
  */
@@ -658,6 +677,97 @@ export class WorkflowEngine {
 
   async getCanaryStatus(workflowId: string): Promise<CanaryStatus> {
     return this.canaryReleaseManager.getCanaryStatus(workflowId);
+  }
+
+  async migrateInstanceVersion(
+    instanceId: string,
+    options: InstanceVersionMigrationOptions,
+  ): Promise<InstanceVersionMigrationResult> {
+    const strategy = options.strategy ?? "strict";
+    const instance = this.instanceManager.getInstance(instanceId);
+    if (!instance) {
+      throw new InstanceNotFoundError(instanceId);
+    }
+
+    const terminalStatuses = new Set(["completed", "failed", "cancelled"]);
+    if (terminalStatuses.has(instance.status)) {
+      throw new Error(
+        `Cannot migrate terminal instance ${instanceId} with status ${instance.status}`,
+      );
+    }
+
+    const workflow = this.workflowRegistry.getWorkflow(
+      instance.workflowId,
+      options.targetVersion,
+    );
+    if (!workflow) {
+      throw new WorkflowNotFoundError(instance.workflowId, options.targetVersion);
+    }
+
+    const fromVersion = instance.workflowVersion;
+    const previousStatus = instance.status;
+    const previousNodes = [...instance.currentNodes];
+    const nodeMapping = options.nodeMapping ?? {};
+    const nextNodes =
+      strategy === "restart"
+        ? [workflow.startNode]
+        : previousNodes
+            .map((nodeId) => {
+              if (workflow.nodes[nodeId]) return nodeId;
+              if (strategy === "remap") {
+                const mapped = nodeMapping[nodeId];
+                if (mapped && workflow.nodes[mapped]) {
+                  return mapped;
+                }
+              }
+              return null;
+            })
+            .filter((nodeId): nodeId is string => typeof nodeId === "string");
+
+    if (strategy !== "restart") {
+      const hasMismatch = nextNodes.length !== previousNodes.length;
+      if (hasMismatch) {
+        throw new Error(
+          `Migration strategy ${strategy} could not map all current nodes to target workflow version ${options.targetVersion}`,
+        );
+      }
+    }
+
+    let resumed = false;
+    if (instance.status === "running") {
+      await this.pauseInstance(instanceId);
+      resumed = options.autoResume === true;
+    }
+
+    instance.workflowVersion = options.targetVersion;
+    instance.currentNodes = nextNodes;
+    instance.context = {
+      ...instance.context,
+      _migration: {
+        at: new Date().toISOString(),
+        fromVersion,
+        toVersion: options.targetVersion,
+        strategy,
+      },
+    };
+    await this.instanceManager.updateInstance(instance);
+
+    if (options.autoResume === true && instance.status === "paused") {
+      await this.resumeInstance(instanceId);
+      resumed = true;
+    }
+
+    return {
+      instanceId,
+      workflowId: instance.workflowId,
+      fromVersion,
+      toVersion: options.targetVersion,
+      strategy,
+      previousStatus,
+      resumed,
+      previousNodes,
+      currentNodes: [...instance.currentNodes],
+    };
   }
 
   async evaluateCanaryPromotion(

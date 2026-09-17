@@ -135,6 +135,18 @@ export interface WaitNodeConfig {
   /** 绝对到期时间（ISO 8601 字符串） */
   until?: string;
   /**
+   * 开启后不在本进程内 setTimeout，而是通过外部定时器适配层调度到期事件。
+   * 适用于需要“进程离线期间仍能按时触发”的场景。
+   */
+  externalTimer?: {
+    enabled?: boolean;
+    /**
+     * 外部定时器到期后应触发的事件类型。
+     * 未设置时使用默认值 `workflow.wait.<instanceId>.<nodeId>`。
+     */
+    eventType?: string;
+  };
+  /**
    * 是否把到期时间固化到实例状态（默认 true）。
    *
    * 开启后，节点首次进入时把绝对 deadline 写入

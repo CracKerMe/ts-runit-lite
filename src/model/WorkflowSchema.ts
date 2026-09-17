@@ -149,6 +149,12 @@ export const WaitNodeConfigSchema = z
   .object({
     durationMs: z.number().optional(),
     until: z.string().optional(),
+    externalTimer: z
+      .object({
+        enabled: z.boolean().optional(),
+        eventType: z.string().optional(),
+      })
+      .optional(),
     durable: z.boolean().optional(),
   })
   .meta({ id: "WaitNodeConfig" });
