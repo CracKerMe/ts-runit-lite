@@ -88,7 +88,7 @@ export {
   LockAcquisitionError,
   WorkflowNotFoundError,
 } from "./engine/errors";
-export { eventBus } from "./event/EventBus";
+export { EventBus, eventBus, type EventHandler } from "./event/EventBus";
 export {
   createHookPayload,
   emitHook,
