@@ -2,8 +2,8 @@
 
 一个用于嵌入式、单进程应用的轻量级 TypeScript 工作流引擎。它包含工作流执行、REST API、事件、Cron 调度、重试和本地文件持久化。本地使用无需依赖 Redis 或数据库。
 
-项目介绍页：在浏览器中打开 [`index.html`](./index.html)，可查看引擎的可视化总览
-（DAG 执行动画、实例生命周期与示例集）。
+项目介绍页：**[在线访问落地页](https://crackerme.github.io/ts-runit-lite/)**，可查看引擎的可视化总览
+（DAG 执行动画、实例生命周期与示例集）；也支持离线使用：在浏览器中打开 [`index.html`](./index.html)。
 
 ## 安装
 

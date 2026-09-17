@@ -831,7 +831,7 @@ export function generateWelcomeHtml(port: number): string {
     <a href="/api-docs">Swagger API 文档</a>
   </div>
   <div class="hero-links">
-    <a href="/docs/concepts">核心概念文档</a>&middot;<a href="/api-docs/openapi.json">OpenAPI JSON</a>&middot;<a href="/workflow-api/v1/health">健康检查</a>&middot;<a href="https://github.com/CracKerMe/ts-workflow-engine-lite" target="_blank" rel="noopener">GitHub 仓库</a>&middot;<a href="/index.html" target="_blank" rel="noopener">项目介绍页</a>
+    <a href="/docs/concepts">核心概念文档</a>&middot;<a href="/api-docs/openapi.json">OpenAPI JSON</a>&middot;<a href="/workflow-api/v1/health">健康检查</a>&middot;<a href="https://github.com/CracKerMe/ts-runit-lite" target="_blank" rel="noopener">GitHub 仓库</a>&middot;<a href="https://crackerme.github.io/ts-runit-lite/" target="_blank" rel="noopener">项目介绍页（在线）</a>&middot;<a href="/index.html" target="_blank" rel="noopener">项目介绍页（本地）</a>
   </div>
 
   <div class="terminal">

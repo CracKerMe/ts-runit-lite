@@ -26,7 +26,7 @@ const TOPBAR: TopbarLink[] = [
   { href: "/playground", label: "Playground" },
 ];
 
-const REPO = "https://github.com/CracKerMe/ts-workflow-engine-lite/blob/main";
+const REPO = "https://github.com/CracKerMe/ts-runit-lite/blob/main";
 
 interface ConceptTopic {
   slug: string;
