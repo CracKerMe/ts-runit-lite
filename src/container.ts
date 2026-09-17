@@ -46,6 +46,14 @@ export async function createContainer(options?: {
   storageType?: "memory" | "file";
   storageDirectory?: string;
   storageFsyncOnWrite?: boolean;
+  /**
+   * Pre-built storage provider (e.g. a custom database-backed adapter).
+   * When supplied, `createStorage()` is skipped and this instance is used
+   * as-is — the container still calls `connect()` on it and owns its
+   * `close()` lifecycle via `destroyContainer()`. Takes precedence over
+   * `storageType`/`storageDirectory`/`storageFsyncOnWrite`.
+   */
+  storage?: StorageProvider;
 }): Promise<AppContainer> {
   Logger.info("system", "container", "Creating application container...");
 
@@ -58,12 +66,19 @@ export async function createContainer(options?: {
     cleanupIntervalMs: engineConfig.cleanupIntervalMs,
   };
 
-  // 创建存储（默认本地文件，测试环境默认内存）
-  const storage = await createStorage({
-    type: options?.storageType,
-    directory: options?.storageDirectory,
-    fsyncOnWrite: options?.storageFsyncOnWrite,
-  });
+  // 创建存储：注入优先（自定义适配器），否则走默认本地文件（测试环境默认内存）
+  let storage: StorageProvider;
+  if (options?.storage) {
+    storage = options.storage;
+    await storage.connect();
+    Logger.info("system", "container", "Using injected storage provider");
+  } else {
+    storage = await createStorage({
+      type: options?.storageType,
+      directory: options?.storageDirectory,
+      fsyncOnWrite: options?.storageFsyncOnWrite,
+    });
+  }
 
   // 创建事件总线
   const eventBus: EventBus = new EventBus();
