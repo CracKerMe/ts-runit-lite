@@ -429,124 +429,460 @@ export function generatePlaygroundHtml(port: number): string {
   const demoData = JSON.stringify(DEMO_WORKFLOWS);
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Playground - ts-workflow-engine-lite</title>
+<script>
+(function(){var t;try{t=localStorage.getItem("tswe-theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-theme",t)})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" />
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #08090a;
+    --bg-panel: #0f1011;
+    --bg-surface: #191a1b;
+    --text-primary: #f7f8f8;
+    --text-secondary: #d0d6e0;
+    --text-muted: #8a8f98;
+    --text-subtle: #62666d;
+    --brand: #5e6ad2;
+    --accent: #7170ff;
+    --accent-hover: #828fff;
+    --border-subtle: rgba(255,255,255,0.05);
+    --border-standard: rgba(255,255,255,0.08);
+    --border-strong: #23252a;
+    --border-hover: #34343a;
+    --hairline: #34343a;
+    --overlay-1: rgba(255,255,255,0.02);
+    --overlay-2: rgba(255,255,255,0.05);
+    --overlay-3: rgba(255,255,255,0.06);
+    --overlay-4: rgba(255,255,255,0.03);
+    --grid-line: rgba(255,255,255,0.035);
+    --glow: rgba(94,106,210,0.26);
+    --wf-glow: rgba(94,106,210,0.07);
+    --wf-edge: rgba(255,255,255,0.10);
+    --wf-fill-idle: rgba(255,255,255,0.03);
+    --wf-node-fill: rgba(94,106,210,0.16);
+    --wf-node-stroke: #7170ff;
+    --wf-node-glow: rgba(113,112,255,0.4);
+    --wf-green-fill: rgba(16,185,129,0.12);
+    --wf-green-stroke: #10b981;
+    --wf-green-glow: rgba(16,185,129,0.35);
+    --flow-line: rgba(113,112,255,0.55);
+    --flow-dash: rgba(113,112,255,0.8);
+    --flow-soft: rgba(113,112,255,0.4);
+    --tag-active: #a5aaff;
+    --code-text: #c3c8d4;
+    --btn-text: #e2e4e7;
+    --selection-bg: rgba(94,106,210,0.45);
+    --shadow-line: rgba(0,0,0,0.2);
+    --terminal-shadow: rgba(0,0,0,0.5);
+    --header-bg: rgba(15,16,17,0.82);
+    --focus-ring: rgba(94,106,210,0.22);
+    --chip-bg: rgba(94,106,210,0.14);
+    --chip-border: rgba(94,106,210,0.28);
+    --chip-text: #a5aaff;
+    --brand-chip-bg: rgba(94,106,210,0.12);
+    --callout-bg: rgba(94,106,210,0.08);
+    --accent-glow: rgba(113,112,255,0.7);
+    --green: #10b981;
+    --green-text: #34d399;
+    --green-bg: rgba(16,185,129,0.1);
+    --green-border: rgba(16,185,129,0.2);
+    --green-glow: rgba(16,185,129,0.9);
+    --red: #eb5757;
+    --red-bg: rgba(235,87,87,0.1);
+    --red-border: rgba(235,87,87,0.22);
+    --amber: #fc7840;
+    --amber-bg: rgba(252,120,64,0.1);
+    --amber-border: rgba(252,120,64,0.22);
+    --running-text: #828fff;
+    --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Berkeley Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-panel: #f7f8fa;
+    --bg-surface: #eef0f4;
+    --text-primary: #17181c;
+    --text-secondary: #3d414a;
+    --text-muted: #6b7080;
+    --text-subtle: #8a8f98;
+    --brand: #5e6ad2;
+    --accent: #5e6ad2;
+    --accent-hover: #4f58c7;
+    --border-subtle: rgba(13,16,26,0.07);
+    --border-standard: rgba(13,16,26,0.11);
+    --border-strong: #e0e2e8;
+    --border-hover: #c9ccd5;
+    --hairline: #d6d8df;
+    --overlay-1: rgba(13,16,26,0.024);
+    --overlay-2: rgba(13,16,26,0.055);
+    --overlay-3: rgba(13,16,26,0.055);
+    --overlay-4: rgba(13,16,26,0.02);
+    --grid-line: rgba(15,18,30,0.05);
+    --glow: rgba(94,106,210,0.14);
+    --wf-glow: rgba(94,106,210,0.06);
+    --wf-edge: rgba(19,22,32,0.14);
+    --wf-fill-idle: rgba(13,16,26,0.02);
+    --wf-node-fill: rgba(94,106,210,0.10);
+    --wf-node-stroke: #5e6ad2;
+    --wf-node-glow: rgba(94,106,210,0.32);
+    --wf-green-fill: rgba(5,150,105,0.10);
+    --wf-green-stroke: #059669;
+    --wf-green-glow: rgba(5,150,105,0.3);
+    --flow-line: rgba(94,106,210,0.55);
+    --flow-dash: rgba(94,106,210,0.75);
+    --flow-soft: rgba(94,106,210,0.35);
+    --tag-active: #4c55c8;
+    --code-text: #44484f;
+    --btn-text: #3d4149;
+    --selection-bg: rgba(94,106,210,0.22);
+    --shadow-line: rgba(19,22,32,0.06);
+    --terminal-shadow: rgba(23,25,35,0.16);
+    --header-bg: rgba(255,255,255,0.82);
+    --focus-ring: rgba(94,106,210,0.18);
+    --chip-bg: rgba(94,106,210,0.10);
+    --chip-border: rgba(94,106,210,0.30);
+    --chip-text: #4c55c8;
+    --brand-chip-bg: rgba(94,106,210,0.09);
+    --callout-bg: rgba(94,106,210,0.06);
+    --accent-glow: rgba(94,106,210,0.45);
+    --green: #059669;
+    --green-text: #047857;
+    --green-bg: rgba(5,150,105,0.09);
+    --green-border: rgba(5,150,105,0.25);
+    --green-glow: rgba(5,150,105,0.5);
+    --red: #d92d20;
+    --red-bg: rgba(217,45,32,0.08);
+    --red-border: rgba(217,45,32,0.25);
+    --amber: #b93815;
+    --amber-bg: rgba(185,56,21,0.08);
+    --amber-border: rgba(185,56,21,0.25);
+    --running-text: #4c55c8;
+  }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv01", "ss03";
+    background: var(--bg);
+    color: var(--text-secondary);
     line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+  ::selection { background: var(--selection-bg); color: var(--text-primary); }
+  a:focus-visible, button:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
   header {
-    padding: 24px 24px 20px;
-    border-bottom: 1px solid #1e293b;
-    background: #111827;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--header-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
     gap: 12px;
   }
-  header h1 { margin: 0; font-size: 20px; }
-  header .nav a { color: #60a5fa; text-decoration: none; font-size: 13px; margin-left: 16px; }
-  main { max-width: 1200px; margin: 0 auto; padding: 24px; }
-  .layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; }
-  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
-  .panel {
-    background: #111827;
-    border: 1px solid #1e293b;
-    border-radius: 10px;
-    padding: 18px;
+  header h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 590;
+    letter-spacing: -0.24px;
+    color: var(--text-primary);
   }
-  .panel h2 { margin: 0 0 12px; font-size: 15px; color: #f1f5f9; }
+  header .nav a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 510;
+    letter-spacing: -0.13px;
+    margin-left: 20px;
+    transition: color 0.1s;
+  }
+  header .nav a:hover { color: var(--text-primary); }
+  header .nav { margin-left: auto; }
+
+  main { max-width: 1280px; margin: 0 auto; padding: 36px 28px 88px; }
+  .layout { display: grid; grid-template-columns: 380px 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--overlay-1);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-line) 0 0 0 1px;
+    border-radius: 14px;
+    padding: 28px;
+  }
+  .panel h2 {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    margin: 0 0 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border-subtle);
+    font-size: 16px;
+    font-weight: 590;
+    letter-spacing: -0.18px;
+    color: var(--text-primary);
+  }
+  .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: var(--chip-bg);
+    border: 1px solid var(--chip-border);
+    color: var(--chip-text);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 510;
+  }
+
   select, textarea, button, input {
     width: 100%;
-    background: #1e293b;
-    border: 1px solid #334155;
-    color: #e2e8f0;
+    background: var(--overlay-1);
+    border: 1px solid var(--border-standard);
+    color: var(--text-secondary);
     border-radius: 6px;
-    padding: 8px 10px;
+    padding: 8px 11px;
     font-size: 13px;
+    letter-spacing: -0.02px;
     font-family: inherit;
+    transition: border-color 0.15s, background 0.15s;
   }
-  select { margin-bottom: 12px; }
+  select:hover, textarea:hover { border-color: var(--border-hover); }
+  select:focus, textarea:focus, input:focus {
+    outline: none;
+    border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  select { margin-bottom: 12px; cursor: pointer; }
+  select option { background: var(--bg-panel); color: var(--text-secondary); }
   textarea {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-family: var(--font-mono);
     font-size: 12.5px;
+    line-height: 1.55;
     resize: vertical;
   }
-  label { display: block; font-size: 12px; color: #94a3b8; margin: 12px 0 6px; }
-  .desc { font-size: 12.5px; color: #94a3b8; margin: -4px 0 12px; }
-  .btn-row { display: flex; gap: 8px; margin-top: 14px; }
+
+  label { display: block; font-size: 12px; font-weight: 510; letter-spacing: -0.02px; color: var(--text-muted); margin: 14px 0 6px; }
+  .desc { font-size: 12.5px; letter-spacing: -0.11px; color: var(--text-muted); margin: -4px 0 12px; line-height: 1.55; }
+  .btn-row { display: flex; gap: 8px; margin-top: 16px; }
+
   button {
     cursor: pointer;
-    background: #2563eb;
-    border-color: #2563eb;
+    padding: 10px 16px;
+    background: var(--brand);
+    border: 1px solid var(--brand);
     color: #fff;
-    font-weight: 600;
-    transition: background 0.15s;
+    font-size: 13px;
+    font-weight: 510;
+    letter-spacing: -0.13px;
+    transition: background 0.15s, border-color 0.15s;
   }
-  button:hover:not(:disabled) { background: #1d4ed8; }
+  button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
-  button.secondary { background: #1e293b; border-color: #334155; color: #e2e8f0; }
-  button.secondary:hover:not(:disabled) { background: #334155; }
+  button.secondary {
+    background: var(--overlay-1);
+    border-color: var(--border-strong);
+    color: var(--btn-text);
+  }
+  button.secondary:hover:not(:disabled) { background: var(--overlay-2); border-color: var(--border-hover); }
+
   .status-line {
-    margin-top: 14px;
+    margin-top: 16px;
     font-size: 12.5px;
-    padding: 8px 10px;
+    letter-spacing: -0.11px;
+    padding: 9px 12px;
     border-radius: 6px;
-    background: #1e293b;
-    color: #94a3b8;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
     min-height: 18px;
     word-break: break-all;
   }
-  .status-line.ok { color: #4ade80; }
-  .status-line.err { color: #f87171; }
+  .status-line.ok { color: var(--green); }
+  .status-line.err { color: var(--red); }
+
   .badge {
     display: inline-block;
-    padding: 2px 10px;
-    border-radius: 999px;
+    padding: 3px 10px;
+    border-radius: 9999px;
     font-size: 11px;
-    font-weight: 700;
+    font-weight: 510;
+    letter-spacing: 0.02em;
     text-transform: uppercase;
+    border: 1px solid transparent;
   }
-  .badge-completed { background: #16a34a33; color: #4ade80; }
-  .badge-running { background: #2563eb33; color: #60a5fa; }
-  .badge-failed { background: #dc262633; color: #f87171; }
-  .badge-waiting, .badge-paused { background: #ca8a0433; color: #facc15; }
-  .badge-default { background: #33415533; color: #94a3b8; }
+  .badge-completed { background: var(--green-bg); color: var(--green-text); border-color: var(--green-border); }
+  .badge-running { background: var(--chip-bg); color: var(--running-text); border-color: var(--chip-border); }
+  .badge-failed { background: var(--red-bg); color: var(--red); border-color: var(--red-border); }
+  .badge-waiting, .badge-paused { background: var(--amber-bg); color: var(--amber); border-color: var(--amber-border); }
+  .badge-default { background: var(--overlay-2); color: var(--text-muted); border-color: var(--border-subtle); }
+
   pre {
-    background: #0b1220;
-    border: 1px solid #1e293b;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-line) 0 0 0 1px;
     border-radius: 8px;
-    padding: 14px;
+    padding: 14px 16px;
     overflow-x: auto;
     font-size: 12.5px;
+    line-height: 1.55;
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
     max-height: 420px;
     margin: 0;
   }
+
   .result-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 10px;
+    margin-bottom: 12px;
     flex-wrap: wrap;
     gap: 8px;
   }
   .result-header h2 { margin: 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 12px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #1e293b; vertical-align: top; }
-  th { color: #94a3b8; font-weight: 600; width: 30%; }
-  code { background: #1e293b; padding: 1px 5px; border-radius: 4px; color: #7dd3fc; font-size: 12px; }
-  .hint { font-size: 12px; color: #64748b; margin-top: 10px; }
-  .empty { color: #64748b; font-size: 13px; padding: 40px 0; text-align: center; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; letter-spacing: -0.11px; margin-top: 4px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 510; font-size: 12px; width: 30%; }
+  td { color: var(--text-secondary); }
+  tbody tr:hover { background: var(--overlay-1); }
+
+  code { background: var(--overlay-3); padding: 1px 5px; border-radius: 4px; font-family: var(--font-mono); color: var(--code-text); font-size: 12px; }
+  .hint { font-size: 13.5px; letter-spacing: -0.11px; line-height: 1.6; color: var(--text-muted); margin: 0 0 28px; }
+  .hint code { background: var(--overlay-3); }
+  .empty { color: var(--text-subtle); font-size: 13px; padding: 48px 0; text-align: center; }
+
+  /* ── JSON 实时校验提示 ────────────────────────── */
+  .field-hint {
+    min-height: 15px;
+    margin: 5px 2px 0;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--text-subtle);
+  }
+  .field-hint.err { color: var(--red); }
+  .field-hint.ok { color: var(--green-text); }
+
+  /* ── curl 预览 ───────────────────────────────── */
+  .curl-box { margin-top: 20px; }
+  .curl-box .curl-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .curl-box .curl-head b {
+    font-size: 12px;
+    font-weight: 510;
+    letter-spacing: 0.02em;
+    color: var(--text-muted);
+  }
+  .curl-box pre {
+    max-height: 168px;
+    font-size: 11px;
+    line-height: 1.55;
+  }
+  .mini-copy {
+    flex: none;
+    padding: 3px 9px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 510;
+    color: var(--text-muted);
+    background: var(--overlay-2);
+    border: 1px solid var(--border-standard);
+    border-radius: 5px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .mini-copy:hover { color: var(--text-primary); border-color: var(--hairline); }
+  .mini-copy.copied { color: var(--green-text); border-color: var(--green-border); }
+
+  /* ── 运行历史 ────────────────────────────────── */
+  .history { margin-top: 72px; }
+  .history h2 {
+    margin: 0 0 4px;
+    font-size: 20px;
+    font-weight: 590;
+    letter-spacing: -0.24px;
+    color: var(--text-primary);
+  }
+  .history .history-sub { margin: 0 0 16px; font-size: 13px; color: var(--text-muted); }
+  .history-list { display: flex; flex-direction: column; gap: 8px; }
+  .history-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 14px;
+    background: var(--overlay-1);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .history-item:hover { background: var(--overlay-2); border-color: var(--hairline); }
+  .history-item .h-badge { flex: none; }
+  .history-item .h-name {
+    flex: 1;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 510;
+    letter-spacing: -0.1px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .history-item .h-meta {
+    flex: none;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-subtle);
+  }
+  .history-empty { color: var(--text-subtle); font-size: 13px; padding: 22px 0; text-align: center; }
+
+  /* ── 主题切换（位于顶栏内）────────────────────── */
+  button.theme-toggle {
+    flex: none;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: var(--overlay-1);
+    border: 1px solid var(--border-standard);
+    border-radius: 9px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  button.theme-toggle:hover { background: var(--overlay-2); border-color: var(--border-hover); color: var(--text-primary); }
+  .theme-toggle svg { width: 17px; height: 17px; display: block; }
+  :root[data-theme="dark"] .theme-toggle .i-moon { display: none; }
+  :root[data-theme="light"] .theme-toggle .i-sun { display: none; }
 </style>
 </head>
 <body>
@@ -557,6 +893,10 @@ export function generatePlaygroundHtml(port: number): string {
     <a href="/docs/concepts">核心概念</a>
     <a href="/api-docs">API 文档</a>
   </div>
+  <button type="button" id="themeToggle" class="theme-toggle" aria-label="切换亮暗主题" title="切换亮暗主题">
+    <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+  </button>
 </header>
 <main>
   <p class="hint" style="margin-top:0">
@@ -565,7 +905,7 @@ export function generatePlaygroundHtml(port: number): string {
   </p>
   <div class="layout">
     <div class="panel">
-      <h2>1. 选择示例工作流</h2>
+      <h2><span class="step">1</span>选择示例工作流</h2>
       <select id="demo-select">
 ${demoOptions}
       </select>
@@ -573,20 +913,30 @@ ${demoOptions}
 
       <label for="def-editor">工作流定义 JSON（可编辑）</label>
       <textarea id="def-editor" rows="16"></textarea>
+      <p class="field-hint" id="def-hint"></p>
 
       <label for="input-editor">启动输入（context）</label>
       <textarea id="input-editor" rows="4"></textarea>
+      <p class="field-hint" id="input-hint"></p>
 
       <div class="btn-row">
         <button id="run-btn">注册并运行</button>
         <button id="reset-btn" class="secondary">重置</button>
       </div>
       <div class="status-line" id="status-line">等待运行&hellip;</div>
+
+      <div class="curl-box">
+        <div class="curl-head">
+          <b>等价的 cURL 命令</b>
+          <button type="button" class="mini-copy" id="curl-copy">复制</button>
+        </div>
+        <pre id="curl-preview"></pre>
+      </div>
     </div>
 
     <div class="panel">
       <div class="result-header">
-        <h2>2. 执行结果</h2>
+        <h2><span class="step">2</span>执行结果</h2>
         <span id="status-badge"></span>
       </div>
       <div id="result-empty" class="empty">运行后这里会显示实例状态、节点输出与执行日志</div>
@@ -604,6 +954,12 @@ ${demoOptions}
         <pre id="r-raw">-</pre>
       </div>
     </div>
+  </div>
+
+  <div class="history">
+    <h2>运行历史</h2>
+    <p class="history-sub">保存在本机浏览器（localStorage），点击任一条目可回填对应的定义与输入。</p>
+    <div class="history-list" id="history-list"></div>
   </div>
 </main>
 <script>
@@ -735,6 +1091,7 @@ ${demoOptions}
       id: definition.id + "-" + Date.now(),
     });
 
+    var runStartedAt = Date.now();
     runBtn.disabled = true;
     resultEmpty.style.display = "block";
     resultBody.style.display = "none";
@@ -764,12 +1121,159 @@ ${demoOptions}
 
       setStatus("实例已启动: " + startResult.instanceId, "ok");
       await pollInstance(startResult.instanceId, 20);
+      pushHistory({
+        status: (statusBadge.textContent || "unknown").trim(),
+        ms: Date.now() - runStartedAt,
+        workflowId: definition.id,
+        instanceId: startResult.instanceId,
+        definition: defEditor.value,
+        input: inputEditor.value,
+      });
     } catch (err) {
       setStatus("运行失败: " + escapeText(err.message), "err");
+      pushHistory({
+        status: "failed",
+        ms: Date.now() - runStartedAt,
+        workflowId: (typeof definition !== "undefined" && definition && definition.id) || "-",
+        instanceId: "-",
+        definition: defEditor.value,
+        input: inputEditor.value,
+      });
     } finally {
       runBtn.disabled = false;
     }
   }
+
+  /* ── 新模块：JSON 校验 / curl 预览 / 运行历史 ─────────── */
+  var defHint = document.getElementById("def-hint");
+  var inputHint = document.getElementById("input-hint");
+  var curlPreview = document.getElementById("curl-preview");
+  var curlCopyBtn = document.getElementById("curl-copy");
+  var historyList = document.getElementById("history-list");
+  var HISTORY_KEY = "tswe-run-history";
+  var HISTORY_MAX = 8;
+
+  function shellSingleQuote(s) {
+    var SQ = String.fromCharCode(39);
+    var ESC = SQ + String.fromCharCode(92) + SQ + SQ;
+    return SQ + String(s).split(SQ).join(ESC) + SQ;
+  }
+
+  function validateEditors() {
+    var ok1 = true, ok2 = true;
+    try { JSON.parse(defEditor.value); } catch (e) { ok1 = false; defHint.textContent = "✗ 定义 JSON: " + e.message; defHint.className = "field-hint err"; }
+    if (ok1) { defHint.textContent = "✓ 定义 JSON 合法"; defHint.className = "field-hint ok"; }
+    var raw2 = inputEditor.value.trim();
+    try { JSON.parse(raw2 || "{}"); } catch (e) { ok2 = false; inputHint.textContent = "✗ 输入 JSON: " + e.message; inputHint.className = "field-hint err"; }
+    if (ok2) { inputHint.textContent = "✓ 输入 JSON 合法"; inputHint.className = "field-hint ok"; }
+    return ok1 && ok2;
+  }
+
+  function updateCurl() {
+    var origin = location.origin;
+    var def, input;
+    try { def = JSON.parse(defEditor.value); } catch (e) {
+      curlPreview.textContent = "# 修正定义 JSON 后自动生成 cURL";
+      return;
+    }
+    try { input = JSON.parse(inputEditor.value.trim() || "{}"); } catch (e) {
+      curlPreview.textContent = "# 修正输入 JSON 后自动生成 cURL";
+      return;
+    }
+    var NL = String.fromCharCode(10);
+    var cont = " " + String.fromCharCode(92) + NL + "  ";
+    var DQ = String.fromCharCode(34);
+    var api = origin + "/workflow-api/v1";
+    var regBody = { id: def.id, name: def.name || def.id, definition: def };
+    var startBody = { context: input };
+    curlPreview.textContent =
+      "# 注册工作流定义" + NL +
+      "curl -X POST " + api + "/workflows" + cont +
+      "-H " + DQ + "Content-Type: application/json" + DQ + cont +
+      "-d " + shellSingleQuote(JSON.stringify(regBody)) + NL + NL +
+      "# 启动实例" + NL +
+      "curl -X POST " + api + "/workflows/" + encodeURIComponent(String(def.id)) + "/start" + cont +
+      "-H " + DQ + "Content-Type: application/json" + DQ + cont +
+      "-d " + shellSingleQuote(JSON.stringify(startBody)) + NL;
+  }
+
+  function readHistory() {
+    try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); } catch (e) { return []; }
+  }
+
+  function pushHistory(entry) {
+    try {
+      var list = readHistory();
+      entry.at = Date.now();
+      if ((entry.definition || "").length > 40000) entry.definition = entry.definition.slice(0, 40000);
+      list.unshift(entry);
+      list = list.slice(0, HISTORY_MAX);
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+    } catch (e) { /* 存储不可用时静默跳过 */ }
+    renderHistory();
+  }
+
+  function renderHistory() {
+    var list = readHistory();
+    if (!historyList) return;
+    if (!list.length) {
+      historyList.innerHTML = '<div class="history-empty">暂无运行记录，点击「注册并运行」开始第一次执行。</div>';
+      return;
+    }
+    historyList.innerHTML = "";
+    list.forEach(function (h) {
+      var item = document.createElement("div");
+      item.className = "history-item";
+      var d = new Date(h.at);
+      var hh = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+      item.innerHTML =
+        '<span class="h-badge">' + badgeFor(h.status) + '</span>' +
+        '<span class="h-name">' + escapeText(String(h.workflowId || "-")) + '</span>' +
+        '<span class="h-meta">' + hh + " &middot; " + (h.ms != null ? h.ms + "ms" : "-") + '</span>';
+      item.addEventListener("click", function () {
+        if (typeof h.definition === "string") defEditor.value = h.definition;
+        if (typeof h.input === "string") inputEditor.value = h.input;
+        validateEditors();
+        updateCurl();
+        setStatus("已回填历史记录: " + escapeText(String(h.workflowId || "-")), "");
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      });
+      historyList.appendChild(item);
+    });
+  }
+
+  /* 拦截 loadDemo：示例切换后同步校验与 curl 预览 */
+  var _origLoadDemo = loadDemo;
+  loadDemo = function (id) {
+    _origLoadDemo(id);
+    validateEditors();
+    updateCurl();
+  };
+
+  var curlTimer = null;
+  function onEditorInput() {
+    validateEditors();
+    if (curlTimer) clearTimeout(curlTimer);
+    curlTimer = setTimeout(updateCurl, 160);
+  }
+  defEditor.addEventListener("input", onEditorInput);
+  inputEditor.addEventListener("input", onEditorInput);
+
+  if (curlCopyBtn) {
+    curlCopyBtn.addEventListener("click", function () {
+      var text = curlPreview.textContent || "";
+      function done() {
+        curlCopyBtn.classList.add("copied");
+        curlCopyBtn.textContent = "已复制 ✓";
+        setTimeout(function () { curlCopyBtn.classList.remove("copied"); curlCopyBtn.textContent = "复制"; }, 1600);
+      }
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {});
+      }
+    });
+  }
+
+  renderHistory();
 
   select.addEventListener("change", function () {
     loadDemo(select.value);
@@ -781,6 +1285,9 @@ ${demoOptions}
 
   loadDemo(select.value);
 })();
+</script>
+<script>
+(function(){var b=document.getElementById("themeToggle");if(!b)return;b.addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="light"?"dark":"light";d.setAttribute("data-theme",t);try{localStorage.setItem("tswe-theme",t)}catch(e){}})})();
 </script>
 </body>
 </html>`;

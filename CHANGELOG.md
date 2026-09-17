@@ -38,6 +38,57 @@ All notable changes to ts-workflow-engine-lite will be documented in this file.
 2. **Class imports**: Replace `WorkflowEngineV2` with `WorkflowEngine` (old name still works but shows deprecation warning)
 3. **Custom storage**: If you implemented `StorageProvider`, no changes needed — the interface is backward compatible. For new implementations, consider implementing only `StorageCore`.
 
+### 存储层吞吐（2026-09-16）
+
+保持单进程 + 本地文件存储不变（不引入 Redis / 集群 / 外部数据库），消除热路径上的浪费。此部分本身向后兼容——公开 API 与 `StorageProvider` 接口均未出现破坏性变更，新增的 `deleteInstanceMetrics()` 是可选方法，旧的整实例 metrics 文件仍可恢复。
+
+**写入路径**
+
+- `metrics` 改为**按节点一个文件**（`metrics/<instanceId>__<nodeId>.json`）。此前每次 `updateNodeMetrics` 都会重写整份含所有节点的记录，累计写入量是 Θ(nodes²)——100 节点工作流要写 1.55MB 才存下 15KB。内存形态与公开 API 不变，只有磁盘布局变了；旧的整实例文件仍能恢复
+- `saveInstance`/`casUpdateInstance` 的全量 deepClone 从 3 次降到 1 次（借用 `protected peek*` 引用替代两次重复 `loadInstance`）
+- `persist()` 按 key 合并已排队的写入：同一条记录的并发写只落盘一次。**不引入持久性窗口**——调用方仍要等到"含自己的值或更新的值"落盘才返回
+- 新增 `deleteInstanceMetrics()`（可选方法），`ArchiveManager` 归档后一并清理 metrics，修掉随归档量增长的内存/磁盘泄漏
+
+**查询路径**
+
+- `MemoryStorage` 新增二级索引：instances 按 `workflowId`/`status`/`parentInstanceId`，events 按 `instanceId`/`eventType`。查询从最小的匹配桶出发而非全量扫描
+- 索引只在选择度足够高时使用（候选桶 ≤ 全量的 50%）；桶接近全量时走索引反而更慢，此时退回顺序扫描
+- 所有对 `instances`/`events` 的增删**必须**走 `putInstance`/`dropInstance`/`putEvent`/`dropEvent` 四个私有入口，否则索引会静默失配
+- 排序键提出比较器（decorate-sort-undecorate），`toEpochMs` 不再跑 O(N log N) 次
+
+**清理与启动**
+
+- 清理路径改为精确删除（按内存侧刚删掉的 id），不再物化整个事件库求差集；孤儿文件由每小时一次的低频清扫兜底
+- `saveHeartbeat` 不再为找一个前值而深拷贝全部 heartbeat
+- 启动恢复跨集合并行、集合内并发回放（`workflow-versions` 因读-改-写保持串行）；新增 `STORAGE_RESTORE_CONCURRENCY`
+
+**顺带修掉的两个既有 bug**
+
+- **内存/磁盘失配**：多个并发写同一条记录且共享的落盘失败时，只有最后一代回滚，回滚到的却是倒数第二个写入者的值，内存因此领先磁盘。改为回滚到这批写入开始前的状态
+- **搜索索引陈旧**：`WorkflowInstanceControl` 直接写 `getInstancesMap()` 绕过索引同步，pause/resume/cancel 后按 status 检索仍返回旧值。改走新增的 `InstanceManager.replaceInstance()`
+
+**实测（`pnpm bench`，见 `src/benchmarks/storage-writes.test.ts`）**
+
+下表是单机单次运行的数字，run-to-run 有 10~20% 波动，看数量级而非精确值：
+
+| 指标                                  | 改动前        | 改动后           |
+| ------------------------------------- | ------------- | ---------------- |
+| 完整节点循环                          | 853 ops/s     | 1,527 ops/s      |
+| `casUpdateInstance`                   | 1,719 ops/s   | 2,482 ops/s      |
+| metrics 累计写入（100 节点）          | 1,551,480 B   | 51,060 B         |
+| metrics 增长（100 vs 50 节点）        | 3.92x（平方） | 2.00x（线性）    |
+| 并发 200 次写同一记录                 | 200 次落盘    | 1 次落盘         |
+| 完整节点循环（fsync=true）            | 35 ops/s      | ~87 ops/s        |
+| `queryInstances` 高选择度（1/50k）    | 2,632 ops/s   | 134,187 ops/s    |
+| `queryInstances` 中选择度（2.5k/50k） | 1,928 ops/s   | 4,009 ops/s      |
+| 启动恢复                              | 未测量        | 17,205 records/s |
+
+**未做（有意）**
+
+- 实例写入的缓冲/刷盘间隔：实例是系统记录，刷盘窗口意味着已确认的工作流状态可能在崩溃时消失
+- `ExecutionOrchestrator` 每次重试的整实例持久化：重试计数必须在退避期间的崩溃后存活，而实例是单个 JSON 文档、没有部分写入路径
+- 公开的只读 borrow API：引擎会修改 load 出来的实例，返回活引用会破坏 CAS 契约
+
 ---
 
 ## [2.2.0] - 2026-09-15
