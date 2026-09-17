@@ -82,95 +82,339 @@ export function generateConceptsDocHtml(port: number): string {
   ).join("\n");
 
   return `<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>核心概念文档 - ts-workflow-engine-lite</title>
+<script>
+(function(){var t;try{t=localStorage.getItem("tswe-theme")}catch(e){}if(t!=="light"&&t!=="dark"){t=window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches?"light":"dark"}document.documentElement.setAttribute("data-theme",t)})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" />
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: dark;
+    --bg: #08090a;
+    --bg-panel: #0f1011;
+    --bg-surface: #191a1b;
+    --text-primary: #f7f8f8;
+    --text-secondary: #d0d6e0;
+    --text-muted: #8a8f98;
+    --text-subtle: #62666d;
+    --brand: #5e6ad2;
+    --accent: #7170ff;
+    --accent-hover: #828fff;
+    --border-subtle: rgba(255,255,255,0.05);
+    --border-standard: rgba(255,255,255,0.08);
+    --border-strong: #23252a;
+    --border-hover: #34343a;
+    --hairline: #34343a;
+    --overlay-1: rgba(255,255,255,0.02);
+    --overlay-2: rgba(255,255,255,0.05);
+    --overlay-3: rgba(255,255,255,0.06);
+    --overlay-4: rgba(255,255,255,0.03);
+    --grid-line: rgba(255,255,255,0.035);
+    --glow: rgba(94,106,210,0.26);
+    --wf-glow: rgba(94,106,210,0.07);
+    --wf-edge: rgba(255,255,255,0.10);
+    --wf-fill-idle: rgba(255,255,255,0.03);
+    --wf-node-fill: rgba(94,106,210,0.16);
+    --wf-node-stroke: #7170ff;
+    --wf-node-glow: rgba(113,112,255,0.4);
+    --wf-green-fill: rgba(16,185,129,0.12);
+    --wf-green-stroke: #10b981;
+    --wf-green-glow: rgba(16,185,129,0.35);
+    --flow-line: rgba(113,112,255,0.55);
+    --flow-dash: rgba(113,112,255,0.8);
+    --flow-soft: rgba(113,112,255,0.4);
+    --tag-active: #a5aaff;
+    --code-text: #c3c8d4;
+    --btn-text: #e2e4e7;
+    --selection-bg: rgba(94,106,210,0.45);
+    --shadow-line: rgba(0,0,0,0.2);
+    --terminal-shadow: rgba(0,0,0,0.5);
+    --header-bg: rgba(15,16,17,0.82);
+    --focus-ring: rgba(94,106,210,0.22);
+    --chip-bg: rgba(94,106,210,0.14);
+    --chip-border: rgba(94,106,210,0.28);
+    --chip-text: #a5aaff;
+    --brand-chip-bg: rgba(94,106,210,0.12);
+    --callout-bg: rgba(94,106,210,0.08);
+    --accent-glow: rgba(113,112,255,0.7);
+    --green: #10b981;
+    --green-text: #34d399;
+    --green-bg: rgba(16,185,129,0.1);
+    --green-border: rgba(16,185,129,0.2);
+    --green-glow: rgba(16,185,129,0.9);
+    --red: #eb5757;
+    --red-bg: rgba(235,87,87,0.1);
+    --red-border: rgba(235,87,87,0.22);
+    --amber: #fc7840;
+    --amber-bg: rgba(252,120,64,0.1);
+    --amber-border: rgba(252,120,64,0.22);
+    --running-text: #828fff;
+    --font-sans: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+    --font-mono: "Berkeley Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --bg-panel: #f7f8fa;
+    --bg-surface: #eef0f4;
+    --text-primary: #17181c;
+    --text-secondary: #3d414a;
+    --text-muted: #6b7080;
+    --text-subtle: #8a8f98;
+    --brand: #5e6ad2;
+    --accent: #5e6ad2;
+    --accent-hover: #4f58c7;
+    --border-subtle: rgba(13,16,26,0.07);
+    --border-standard: rgba(13,16,26,0.11);
+    --border-strong: #e0e2e8;
+    --border-hover: #c9ccd5;
+    --hairline: #d6d8df;
+    --overlay-1: rgba(13,16,26,0.024);
+    --overlay-2: rgba(13,16,26,0.055);
+    --overlay-3: rgba(13,16,26,0.055);
+    --overlay-4: rgba(13,16,26,0.02);
+    --grid-line: rgba(15,18,30,0.05);
+    --glow: rgba(94,106,210,0.14);
+    --wf-glow: rgba(94,106,210,0.06);
+    --wf-edge: rgba(19,22,32,0.14);
+    --wf-fill-idle: rgba(13,16,26,0.02);
+    --wf-node-fill: rgba(94,106,210,0.10);
+    --wf-node-stroke: #5e6ad2;
+    --wf-node-glow: rgba(94,106,210,0.32);
+    --wf-green-fill: rgba(5,150,105,0.10);
+    --wf-green-stroke: #059669;
+    --wf-green-glow: rgba(5,150,105,0.3);
+    --flow-line: rgba(94,106,210,0.55);
+    --flow-dash: rgba(94,106,210,0.75);
+    --flow-soft: rgba(94,106,210,0.35);
+    --tag-active: #4c55c8;
+    --code-text: #44484f;
+    --btn-text: #3d4149;
+    --selection-bg: rgba(94,106,210,0.22);
+    --shadow-line: rgba(19,22,32,0.06);
+    --terminal-shadow: rgba(23,25,35,0.16);
+    --header-bg: rgba(255,255,255,0.82);
+    --focus-ring: rgba(94,106,210,0.18);
+    --chip-bg: rgba(94,106,210,0.10);
+    --chip-border: rgba(94,106,210,0.30);
+    --chip-text: #4c55c8;
+    --brand-chip-bg: rgba(94,106,210,0.09);
+    --callout-bg: rgba(94,106,210,0.06);
+    --accent-glow: rgba(94,106,210,0.45);
+    --green: #059669;
+    --green-text: #047857;
+    --green-bg: rgba(5,150,105,0.09);
+    --green-border: rgba(5,150,105,0.25);
+    --green-glow: rgba(5,150,105,0.5);
+    --red: #d92d20;
+    --red-bg: rgba(217,45,32,0.08);
+    --red-border: rgba(217,45,32,0.25);
+    --amber: #b93815;
+    --amber-bg: rgba(185,56,21,0.08);
+    --amber-border: rgba(185,56,21,0.25);
+    --running-text: #4c55c8;
+  }
   * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-    background: #0f172a;
-    color: #e2e8f0;
+    font-family: var(--font-sans);
+    font-feature-settings: "cv01", "ss03";
+    background: var(--bg);
+    color: var(--text-secondary);
     line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
   }
+  ::selection { background: var(--selection-bg); color: var(--text-primary); }
+  a:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 6px; }
+
   header {
-    padding: 32px 24px;
-    border-bottom: 1px solid #1e293b;
-    background: #111827;
+    position: relative;
+    padding: 34px 28px;
+    border-bottom: 1px solid var(--border-subtle);
+    background: var(--bg-panel);
   }
-  header h1 { margin: 0 0 4px; font-size: 22px; }
-  header a { color: #60a5fa; text-decoration: none; font-size: 13px; }
-  .layout { display: flex; max-width: 1100px; margin: 0 auto; }
+  header h1 {
+    margin: 0 0 7px;
+    font-size: 24px;
+    font-weight: 590;
+    line-height: 1.25;
+    letter-spacing: -0.34px;
+    color: var(--text-primary);
+  }
+  header a { color: var(--accent); text-decoration: none; font-size: 13px; font-weight: 510; letter-spacing: -0.13px; }
+  header a:hover { color: var(--accent-hover); }
+
+  .layout { display: flex; max-width: 1200px; margin: 0 auto; }
   nav {
-    flex: 0 0 200px;
-    padding: 24px 16px;
+    flex: 0 0 232px;
+    padding: 32px 18px;
     position: sticky;
     top: 0;
     align-self: flex-start;
+    max-height: 100vh;
+    overflow-y: auto;
   }
   nav a {
     display: block;
     padding: 6px 10px;
     border-radius: 6px;
-    color: #94a3b8;
+    color: var(--text-muted);
     text-decoration: none;
     font-size: 13px;
+    font-weight: 510;
+    letter-spacing: -0.13px;
     margin-bottom: 2px;
+    transition: background 0.1s, color 0.1s;
   }
-  nav a:hover { background: #1e293b; color: #e2e8f0; }
-  main { flex: 1; padding: 24px 24px 100px; min-width: 0; }
-  section { margin-bottom: 48px; scroll-margin-top: 16px; }
+  nav a:hover { background: var(--overlay-2); color: var(--text-primary); }
+
+  main { flex: 1; padding: 44px 40px 128px; min-width: 0; }
+  section { margin-bottom: 80px; scroll-margin-top: 16px; }
   h2 {
-    font-size: 20px;
-    margin: 0 0 6px;
-    color: #f1f5f9;
+    font-size: 28px;
+    font-weight: 510;
+    line-height: 1.25;
+    letter-spacing: -0.34px;
+    margin: 0 0 14px;
+    color: var(--text-primary);
   }
   h2 .tag {
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 400;
-    color: #64748b;
-    margin-left: 8px;
+    letter-spacing: -0.13px;
+    color: var(--text-subtle);
+    margin-left: 10px;
   }
-  h3 { font-size: 15px; color: #cbd5e1; margin: 24px 0 8px; }
-  p { color: #cbd5e1; }
-  code {
-    background: #1e293b;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-size: 13px;
-    color: #7dd3fc;
+  h3 {
+    font-size: 17px;
+    font-weight: 590;
+    letter-spacing: -0.2px;
+    color: var(--text-primary);
+    margin: 36px 0 12px;
   }
-  pre {
-    background: #1e293b;
-    border: 1px solid #334155;
-    border-radius: 8px;
-    padding: 14px 16px;
-    overflow-x: auto;
-    font-size: 13px;
-  }
-  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
-  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid #1e293b; vertical-align: top; }
-  th { color: #94a3b8; font-weight: 600; }
-  .callout {
-    border-left: 3px solid #2563eb;
-    background: #1e293b55;
-    padding: 10px 14px;
-    border-radius: 0 6px 6px 0;
-    font-size: 13.5px;
-    color: #cbd5e1;
+  p {
+    font-size: 15px;
+    letter-spacing: -0.11px;
+    color: var(--text-secondary);
     margin: 12px 0;
   }
+  p a { color: var(--accent); text-decoration: none; }
+  p a:hover { color: var(--accent-hover); text-decoration: underline; text-underline-offset: 3px; }
+
+  code {
+    background: var(--overlay-3);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    color: var(--code-text);
+  }
+  pre {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-subtle);
+    box-shadow: var(--shadow-line) 0 0 0 1px;
+    border-radius: 8px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  pre code { background: none; padding: 0; border: none; color: var(--text-secondary); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; letter-spacing: -0.13px; margin-top: 12px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
+  th { color: var(--text-muted); font-weight: 510; font-size: 12px; letter-spacing: 0.02em; }
+  tbody tr { transition: background 0.1s; }
+  tbody tr:hover { background: var(--overlay-1); }
+
+  .callout {
+    border-left: 2px solid var(--brand);
+    background: var(--callout-bg);
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
+    font-size: 13.5px;
+    letter-spacing: -0.11px;
+    line-height: 1.6;
+    color: var(--text-secondary);
+    margin: 16px 0;
+  }
+  .callout code { background: var(--overlay-3); }
   .back { display: inline-block; margin-top: 8px; }
+
+  /* ── 主题切换（位于顶栏右上）──────────────────── */
+  button.theme-toggle {
+    position: absolute;
+    top: 30px;
+    right: 26px;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    background: var(--overlay-1);
+    border: 1px solid var(--border-standard);
+    border-radius: 9px;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+  }
+  button.theme-toggle:hover { background: var(--overlay-2); border-color: var(--border-hover); color: var(--text-primary); }
+  .theme-toggle svg { width: 17px; height: 17px; display: block; }
+  :root[data-theme="dark"] .theme-toggle .i-moon { display: none; }
+  :root[data-theme="light"] .theme-toggle .i-sun { display: none; }
+
+  /* ── 侧栏当前章节高亮（scrollspy）─────────────── */
+  nav a.active {
+    background: var(--callout-bg);
+    color: var(--text-primary);
+    box-shadow: inset 2px 0 0 var(--brand);
+  }
+
+  /* ── 代码块复制按钮 ───────────────────────────── */
+  main pre { position: relative; }
+  .code-copy {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    font-family: var(--font-sans);
+    font-size: 11px;
+    font-weight: 510;
+    color: var(--text-muted);
+    background: var(--overlay-2);
+    border: 1px solid var(--border-standard);
+    border-radius: 5px;
+    cursor: pointer;
+    opacity: 0;
+    transition: color 0.15s, border-color 0.15s, opacity 0.15s;
+  }
+  main pre:hover .code-copy, .code-copy:focus-visible { opacity: 1; }
+  .code-copy:hover { color: var(--text-primary); border-color: var(--hairline); }
+  .code-copy.copied { color: var(--green-text); border-color: var(--green-border); opacity: 1; }
 </style>
 </head>
 <body>
 <header>
   <h1>核心概念文档</h1>
   <a href="/">&larr; 返回首页</a>
+  <button type="button" id="themeToggle" class="theme-toggle" aria-label="切换亮暗主题" title="切换亮暗主题">
+    <svg class="i-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+    <svg class="i-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+  </button>
 </header>
 <div class="layout">
   <nav>
@@ -188,6 +432,9 @@ export function generateConceptsDocHtml(port: number): string {
     <a href="#archive">终态实例归档</a>
     <a href="#join-transform">join / transform / durable wait</a>
     <a href="#integration">持久化与外部集成增强</a>
+    <a href="#instance-control">实例控制 API</a>
+    <a href="#errors">错误处理与死信队列</a>
+    <a href="#webhooks">通知与 Webhook</a>
   </nav>
   <main>
 
@@ -350,8 +597,111 @@ ${fnRows}
     </div>
   </section>
 
+  <section id="instance-control">
+    <h2>实例控制 API</h2>
+    <p>运行中的实例不是只能等它跑完——针对失败与卡住两种场景，引擎提供了一组干预端点：</p>
+    <table>
+      <thead><tr><th>操作</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>retry</code></td><td>重试失败节点。节点内可通过 <code>instance.retries[nodeId]</code> 感知第几次重试，实现「先失败后成功」的补偿语义。</td></tr>
+        <tr><td><code>skip</code></td><td>跳过当前失败节点，直接沿 next 继续推进。</td></tr>
+        <tr><td><code>compensate</code></td><td>对已执行节点触发补偿逻辑，用于 saga 式回滚。</td></tr>
+        <tr><td><code>signal</code></td><td><code>POST /instances/:id/signal</code> 向等待型节点（wait / event / approval）注入信号，唤醒继续执行。</td></tr>
+      </tbody>
+    </table>
+    <div class="callout">
+      示例见 <code>examples/instance-control-api.ts</code>，覆盖 retry / skip / compensate 与节点状态查询的完整调用链。
+    </div>
+  </section>
+
+  <section id="errors">
+    <h2>错误处理与死信队列</h2>
+    <p>高频失败模式用具名错误类导出，<code>instanceof</code> 精确捕获而非匹配错误消息字符串：
+    <code>WorkflowNotFoundError</code>（启动未注册的工作流）、<code>InstanceNotFoundError</code>（查询/信号不存在的实例，常见于拼写错误、已归档或来自不同 <code>STORAGE_DIR</code> 的实例）、
+    <code>ConcurrencyConflictError</code>（CAS 版本冲突）与 <code>LockAcquisitionError</code>（锁获取失败）。</p>
+    <p>节点抛出异常后按重试策略自动重试（<code>instance.retries</code> 记录次数）；超过策略仍失败的节点最终进入死信队列，
+    通过 <code>GET /workflow-api/v1/dlq</code> 查询，不会无限循环占用调度资源，便于事后排查与人工补偿。</p>
+    <div class="callout">
+      示例见 <code>examples/error-handling.ts</code> 与 <code>examples/graceful-degradation.ts</code>。
+    </div>
+  </section>
+
+  <section id="webhooks">
+    <h2>通知与 Webhook</h2>
+    <p><code>notification</code> 节点通过通知渠道向外部推送消息：内置 <code>WebhookChannel</code>（通用 HTTP Webhook）与
+    <code>SlackChannel</code>（Slack Incoming Webhook，需配置 webhook URL），可在工作流任意位置插入通知动作。</p>
+    <p>引擎侧的 WebhookManager 会在系统生命周期事件发生时触发已注册的 Webhook 接收器；Webhook 注册与投递记录均持久化到存储
+    （重启后自动恢复），Console WebSocket 同时向控制台实时广播同一份事件流，方便在 Playground/自建控制台中观察执行动态。</p>
+    <p>事件也可由外部主动驱动：<code>GET /workflow-api/v1/events</code> 支持查询与触发事件，配合 <code>event</code> 节点实现外部系统与工作流的双向集成。</p>
+  </section>
+
   </main>
 </div>
+<script>
+(function(){var b=document.getElementById("themeToggle");if(!b)return;b.addEventListener("click",function(){var d=document.documentElement,t=d.getAttribute("data-theme")==="light"?"dark":"light";d.setAttribute("data-theme",t);try{localStorage.setItem("tswe-theme",t)}catch(e){}})})();
+</script>
+<script>
+(function(){
+  /* 代码块复制按钮：为每个 main pre 注入 */
+  function bindCopy(btn){
+    btn.addEventListener("click",function(){
+      var pre=btn.closest("pre");
+      if(!pre)return;
+      var text=pre.textContent||"";
+      function done(){
+        btn.classList.add("copied");
+        var old=btn.textContent;
+        btn.textContent="已复制 ✓";
+        setTimeout(function(){btn.classList.remove("copied");btn.textContent=old;},1600);
+      }
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(text).then(done,function(){fallback()});
+      }else{fallback()}
+      function fallback(){
+        var ta=document.createElement("textarea");
+        ta.value=text;ta.style.position="fixed";ta.style.opacity="0";
+        document.body.appendChild(ta);ta.select();
+        try{document.execCommand("copy");done()}catch(e){}
+        document.body.removeChild(ta);
+      }
+    });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll("main pre"),function(pre){
+    var btn=document.createElement("button");
+    btn.type="button";
+    btn.className="code-copy";
+    btn.textContent="复制";
+    btn.setAttribute("aria-label","复制代码");
+    pre.appendChild(btn);
+    bindCopy(btn);
+  });
+
+  /* Scrollspy：侧栏高亮当前章节 */
+  var navLinks=Array.prototype.slice.call(document.querySelectorAll("nav a"));
+  var idMap={};
+  navLinks.forEach(function(a){
+    var href=a.getAttribute("href")||"";
+    if(href.charAt(0)==="#")idMap[href.slice(1)]=a;
+  });
+  var sections=Array.prototype.slice.call(document.querySelectorAll("main section[id]"));
+  if("IntersectionObserver" in window && sections.length){
+    var visible={};
+    var io=new IntersectionObserver(function(entries){
+      entries.forEach(function(en){
+        if(en.isIntersecting)visible[en.target.id]=en.intersectionRatio;
+        else delete visible[en.target.id];
+      });
+      var best=null,bestRatio=0;
+      Object.keys(visible).forEach(function(id){
+        if(visible[id]>bestRatio){bestRatio=visible[id];best=id;}
+      });
+      navLinks.forEach(function(a){a.classList.remove("active")});
+      if(best&&idMap[best])idMap[best].classList.add("active");
+    },{rootMargin:"-64px 0px -55% 0px",threshold:[0,0.25,0.5,1]});
+    sections.forEach(function(s){io.observe(s)});
+  }
+})();
+</script>
 </body>
 </html>`;
 }
