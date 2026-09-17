@@ -41,6 +41,12 @@ export interface WorkflowInstance {
          * 节点完成后清除。
          */
         deadline?: number;
+        externalTimer?: {
+          timerKey: string;
+          eventType: string;
+          triggerAt: number;
+          provider?: string;
+        };
       }
     >;
   };

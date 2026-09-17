@@ -26,6 +26,11 @@ export type {
 } from "./StorageProvider";
 export type { DlqStorage } from "./StorageProvider";
 export {
+  createPostgresStorageAdapter,
+  createSqliteStorageAdapter,
+  registerDatabaseStorageAdapters,
+} from "./database-adapters";
+export {
   createStorageFromRegistry,
   listStorageAdapters,
   registerStorageAdapter,

@@ -82,9 +82,17 @@ export {
 } from "./engine/functions/customFunctions";
 // 导出核心模块供外部使用
 export {
+  type InstanceVersionMigrationOptions,
+  type InstanceVersionMigrationResult,
   type WaitForCompletionOptions,
   WorkflowEngine,
 } from "./engine/WorkflowEngine";
+export {
+  getExternalTimerAdapter,
+  setExternalTimerAdapter,
+  type ExternalTimerAdapter,
+  type ExternalTimerScheduleRequest,
+} from "./timers";
 export {
   ConcurrencyConflictError,
   InstanceNotFoundError,
