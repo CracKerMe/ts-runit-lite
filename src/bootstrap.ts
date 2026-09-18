@@ -20,6 +20,7 @@ import { WorkflowEngine } from "./engine/WorkflowEngine";
 import { setShutdownInstance, setupGracefulShutdown } from "./lifecycle";
 import { setupNotificationChannelsFromEnv } from "./notification/index";
 import { ArchiveManager } from "./storage/ArchiveManager";
+import type { StorageProvider } from "./storage/StorageProvider";
 import type { ExternalTimerAdapter } from "./timers/ExternalTimerAdapter";
 import { setExternalTimerAdapter } from "./timers/ExternalTimerAdapter";
 import { Logger, type LogLevel } from "./utils/Logger";
@@ -38,6 +39,13 @@ export interface BootstrapOptions {
   archiveRetentionDays?: number;
   storageType?: "memory" | "file";
   storageDirectory?: string;
+  /**
+   * Inject a custom StorageProvider (e.g. a database-backed adapter).
+   * Takes precedence over `storageType`/`storageDirectory` — those are
+   * ignored when this is supplied. See `src/storage/StorageProvider.ts`
+   * for the interface a custom adapter must implement.
+   */
+  storage?: StorageProvider;
   logLevel?: LogLevel;
   externalTimerAdapter?: ExternalTimerAdapter | null;
 }
@@ -79,6 +87,7 @@ export async function bootstrap(
 
   // 2. 创建依赖容器
   const container = await createContainer({
+    storage: options.storage,
     storageType: options.storageType ?? config.storage.type,
     storageDirectory: options.storageDirectory ?? config.storage.directory,
   });

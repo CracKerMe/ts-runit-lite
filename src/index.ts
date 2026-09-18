@@ -88,7 +88,7 @@ export {
   LockAcquisitionError,
   WorkflowNotFoundError,
 } from "./engine/errors";
-export { eventBus } from "./event/EventBus";
+export { EventBus, eventBus, type EventHandler } from "./event/EventBus";
 export {
   createHookPayload,
   emitHook,
@@ -201,11 +201,24 @@ export {
   StorageType,
   createStorage,
   getStorageType,
+  registerStorageAdapter,
   withStorageCache,
   withStorageMetrics,
 } from "./storage/index";
 export type {
   CacheStorageMiddlewareOptions,
+  EventQueryParams,
+  EventRecord,
+  EventWaitingState,
+  HeartbeatState,
+  InstanceMetrics,
+  InstanceQueryParams,
+  InstanceSortField,
+  InstanceSortOrder,
   LocalFileStorageOptions,
+  NodeMetrics,
+  StorageCore,
   StorageProvider,
+  StoredWorkflow,
+  StoredWorkflowVersion,
 } from "./storage/index";
